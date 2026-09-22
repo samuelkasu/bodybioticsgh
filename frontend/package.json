@@ -1,0 +1,69 @@
+{
+  "name": "bodybioticsgh",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.11 <25"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build && npm run build:sw",
+    "build:sw": "serwist build serwist.config.mts",
+    "start": "next start",
+    "lint": "eslint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "perf": "node scripts/lighthouse.mjs",
+    "icons": "tsx scripts/generate-icons.ts",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down",
+    "api": "dotnet run --project ../backend/src/BodyBiotics.Api",
+    "import:catalog": "tsx scripts/import-catalog.ts"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.12.0",
+    "@serwist/next": "^9.5.12",
+    "next": "16.3.5",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-redux": "^9.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@lhci/cli": "^0.15.1",
+    "@playwright/test": "^1.63.0",
+    "@serwist/cli": "^9.5.12",
+    "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.5",
+    "eslint-config-prettier": "^10.1.8",
+    "fake-indexeddb": "^6.2.5",
+    "jest": "^30.5.1",
+    "jest-environment-jsdom": "^30.5.1",
+    "prettier": "^3.9.6",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "serwist": "^9.5.12",
+    "sharp": "^0.35.4",
+    "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.13",
+    "typescript": "^5"
+  },
+  "overrides": {
+    "browserslist": "^4.28.9"
+  }
+}
