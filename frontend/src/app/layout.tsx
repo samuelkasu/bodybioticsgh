@@ -41,10 +41,33 @@ const crimsonPro = Crimson_Pro({
 // browser fetches it only once it finds text that needs it, and `display: swap`
 // means the title is readable in the fallback meanwhile.
 const wahiyang = localFont({
-  src: "./fonts/Wahiyang-Regular.ttf",
+  // woff2, not the .ttf it shipped as: same outlines, 78KB down to 24KB.
+  src: "./fonts/Wahiyang-Regular.woff2",
   variable: "--font-wahiyang",
   display: "swap",
   preload: false,
+});
+
+/**
+ * The cedi sign, and nothing else.
+ *
+ * Every price on the site is "GH₵…", and ₵ is U+20B5 — which Google's slicing
+ * puts in Inter Tight's `latin-ext` subset, not `latin`. One glyph on the
+ * announcement bar was therefore pulling an 89KB font file on every page: the
+ * single largest asset on /shop, and unpreloaded, so it was discovered late
+ * and delayed everything queued behind it.
+ *
+ * This is that same subset cut down to the one codepoint. Listed ahead of the
+ * real faces in --font-sans and --font-display, it answers for ₵ and, because
+ * its unicode-range covers nothing else, every other character falls through
+ * untouched. A latin-ext character elsewhere still fetches the full file.
+ */
+const cedi = localFont({
+  src: "./fonts/InterTight-Cedi.woff2",
+  variable: "--font-cedi",
+  display: "swap",
+  // 1.2KB, on every page, and the first thing a price needs.
+  preload: true,
 });
 
 export const metadata: Metadata = {
@@ -163,7 +186,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en-GH"
-      className={`${interTight.variable} ${crimsonPro.variable} ${wahiyang.variable} h-full antialiased`}
+      className={`${cedi.variable} ${interTight.variable} ${crimsonPro.variable} ${wahiyang.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
         <JsonLd data={ORGANISATION_JSON_LD} />
