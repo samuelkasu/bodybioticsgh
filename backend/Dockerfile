@@ -4,7 +4,14 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 
 # Restore before copying sources: the layer is cached until a csproj changes.
-COPY Directory.Build.props Directory.Packages.props nuget.config ./
+#
+# .editorconfig belongs in this list even though nothing here reads it as
+# editor settings: it is where the analyzer severities live, and one of them
+# turns CA1861 off for **/Migrations/*.cs. Warnings are errors in
+# Directory.Build.props, so without this file the image build fails on ten
+# analyzer complaints about code EF generated — while `dotnet build` on a
+# developer machine and in CI, which do see it, pass.
+COPY Directory.Build.props Directory.Packages.props nuget.config .editorconfig ./
 COPY src/BodyBiotics.Api/BodyBiotics.Api.csproj src/BodyBiotics.Api/
 COPY src/BodyBiotics.Domain/BodyBiotics.Domain.csproj src/BodyBiotics.Domain/
 COPY src/BodyBiotics.Infrastructure/BodyBiotics.Infrastructure.csproj src/BodyBiotics.Infrastructure/
