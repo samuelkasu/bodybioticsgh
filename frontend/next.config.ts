@@ -45,7 +45,13 @@ const isDev = process.env.NODE_ENV === "development";
 // not set this, so the check still stands where it matters.
 const allowLocalSiteUrl = process.env.ALLOW_LOCAL_SITE_URL === "1";
 
-if (process.env.NODE_ENV === "production" && !allowLocalSiteUrl) {
+// `next typegen` loads this config too, but it only writes .next/types — no
+// origin is inlined anywhere, and nothing it emits is served. Typechecking a
+// checkout that has no site URL configured (CI, a fresh clone) should not have
+// to pretend to be a release build to get past the guard above.
+const isTypegen = process.argv.includes("typegen");
+
+if (process.env.NODE_ENV === "production" && !allowLocalSiteUrl && !isTypegen) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
   if (!siteUrl) {
