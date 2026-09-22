@@ -77,6 +77,11 @@ test.describe("storefront journey", () => {
     // Wait for the cart query to settle first: the page swaps the empty state
     // for the form once it resolves, and clicking through that swap is a race.
     await expect(page.getByText(/^Items$/)).toBeVisible({ timeout: 15_000 });
+    // Same reason as below: the delivery zones landing re-renders the form, and
+    // clicking through that swap detaches the button mid-click.
+    await expect(
+      page.getByLabel(/delivery area/i).locator("option[value='accra-central']"),
+    ).toBeAttached({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /place order/i })).toBeEnabled();
     await page.getByRole("button", { name: /place order/i }).click();
 
@@ -127,13 +132,15 @@ test.describe("storefront journey", () => {
   test("an unknown product slug shows a recoverable error, not a crash", async ({
     page,
   }) => {
-    await page.goto("/product/definitely-not-a-product");
+    const response = await page.goto("/product/definitely-not-a-product");
 
-    // .first() because Next renders its own empty role=alert route announcer.
-    await expect(page.getByRole("alert").first()).toContainText(
-      /could not find that product/i,
-    );
-    await expect(page.getByRole("link", { name: /browse all products/i })).toBeVisible();
+    // The slug is resolved on the server, so a dead product URL answers a real
+    // 404 with the not-found page rather than a 200 carrying an error state.
+    expect(response?.status()).toBe(404);
+    await expect(
+      page.getByRole("heading", { name: /could not find that page/i }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: /browse the shop/i })).toBeVisible();
   });
 
   test("account is protected by the proxy", async ({ page }) => {
