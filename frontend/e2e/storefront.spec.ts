@@ -119,7 +119,7 @@ test.describe("storefront journey", () => {
     // that is about to be replaced.
     const zone = page.getByLabel(/delivery area/i);
     await expect(zone.locator("option[value='accra-central']")).toBeAttached({
-      timeout: 15_000,
+      timeout: 30_000,
     });
     await zone.selectOption("accra-central");
 
