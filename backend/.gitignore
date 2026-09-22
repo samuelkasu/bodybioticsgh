@@ -1,0 +1,8 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# local secrets live in user-secrets or env vars, never in the repo
+appsettings.Local.json

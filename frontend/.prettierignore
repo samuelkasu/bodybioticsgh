@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+build
+coverage
+public
+package-lock.json
+next-env.d.ts
+src/generated
+playwright-report
+test-results
