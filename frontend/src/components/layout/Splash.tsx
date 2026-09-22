@@ -12,7 +12,7 @@ const MIN_HOLD_MS = 600;
  * Hard cap. A splash that outlives a stalled image or a hanging request is
  * worse than no splash, so readiness can delay the exit but never own it.
  */
-const MAX_HOLD_MS = 6000;
+const MAX_HOLD_MS = 2000;
 
 export type SplashProps = {
   /**
@@ -48,24 +48,30 @@ export function Splash({ persistent = false }: SplashProps) {
     let holdTimer: ReturnType<typeof setTimeout> | undefined;
 
     const leave = () => {
+      // Whichever of fonts-ready and the cap wins, the other is a no-op.
+      if (holdTimer) return;
       // Elapsed, not a fixed delay: a page that was ready in 50ms still gets
       // the full hold, one that took 2s leaves immediately.
       const remaining = Math.max(0, MIN_HOLD_MS - (Date.now() - startedAt));
       holdTimer = setTimeout(() => setLeaving(true), remaining);
     };
 
-    // Hydration can land after load has already fired; there is no event left
-    // to wait for in that case.
-    if (document.readyState === "complete") {
-      leave();
-    } else {
-      window.addEventListener("load", leave, { once: true });
-    }
+    // Fonts, not `load`. Waiting for window `load` meant waiting for every
+    // below-the-fold product photo: on a throttled connection the 6s cap was
+    // what actually dismissed the splash, and because it covers the viewport
+    // the real content could not be the largest paint until then — LCP was
+    // measuring this component, at 7.8s. Fonts settle in a few hundred ms and
+    // are what the text under here would otherwise reflow on; images below
+    // the fold are not worth holding the whole page for.
+    let cancelled = false;
+    document.fonts.ready.then(() => {
+      if (!cancelled) leave();
+    });
 
     const cap = setTimeout(leave, MAX_HOLD_MS);
 
     return () => {
-      window.removeEventListener("load", leave);
+      cancelled = true;
       clearTimeout(cap);
       if (holdTimer) clearTimeout(holdTimer);
     };
