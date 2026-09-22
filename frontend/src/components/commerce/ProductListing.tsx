@@ -197,9 +197,7 @@ export function ProductListing({
               page={page}
               totalPages={totalPages}
               buildHref={(next) => buildHref({ page: String(next) })}
-              onLoadMore={
-                lastLoaded < totalPages ? () => void onLoadMore() : undefined
-              }
+              onLoadMore={lastLoaded < totalPages ? () => void onLoadMore() : undefined}
               isLoadingMore={isLoadingMore}
             />
           </div>
