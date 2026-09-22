@@ -51,13 +51,10 @@
      every other character falls straight through to the face behind it. See
      the localFont in layout.tsx for why it exists. */
   --font-sans:
-    var(--font-cedi), var(--font-inter-tight), ui-sans-serif, system-ui,
-    sans-serif;
-  --font-display:
-    var(--font-cedi), var(--font-crimson-pro), ui-serif, Georgia, serif;
+    var(--font-cedi), var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-cedi), var(--font-crimson-pro), ui-serif, Georgia, serif;
   --font-script:
-    var(--font-wahiyang), var(--font-cedi), var(--font-crimson-pro), ui-serif,
-    serif;
+    var(--font-wahiyang), var(--font-cedi), var(--font-crimson-pro), ui-serif, serif;
 
   /**
    * Type scale. The original was a page builder, so its type was a pile of
