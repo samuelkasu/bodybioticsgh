@@ -206,6 +206,9 @@ jobs:
         with:
           name: lighthouse-reports
           path: frontend/.lighthouseci/
+          # The output dir is a dotfile and v4 drops those by default, so a
+          # failed budget run uploaded nothing to look at.
+          include-hidden-files: true
           retention-days: 7
 
   docker:
