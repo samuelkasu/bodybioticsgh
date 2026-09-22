@@ -91,7 +91,7 @@ export function ProductCard({ product, index = 99 }: ProductCardProps) {
         )}
       </Link>
 
-      <div className="flex flex-1 flex-col px-0 text-left sm:text-center">
+      <div className="product-card-body flex flex-1 flex-col px-0 text-left sm:text-center">
         <h3 className="text-body tracking-label sm:text-body mt-2 mb-4 px-2.5 font-sans text-black">
           {/* No rule under the name: the whole card is the hit area, and the
               photo already swaps to show it is live. */}
