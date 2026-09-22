@@ -20,7 +20,9 @@ export type ProductGridProps = {
  * phone, so every row of the grid grew when the results landed and pushed the
  * whole page down: 0.17 of the shop's 0.19 CLS came from this one substitution.
  * Mirroring the card's boxes — square photo, two lines of name, price, button —
- * means the grid occupies the same height before and after.
+ * means the grid occupies the same height before and after. The last 16px of
+ * the mismatch was a real card's optional stock caption, which no skeleton can
+ * predict; both sides now share `.product-card-body` and match by construction.
  */
 function ProductCardSkeleton() {
   return (
@@ -29,7 +31,7 @@ function ProductCardSkeleton() {
       className="border-card-line/90 bg-card rounded-card flex h-full flex-col overflow-hidden border"
     >
       <Skeleton className="aspect-square rounded-none" />
-      <div className="flex flex-1 flex-col px-2.5">
+      <div className="product-card-body flex flex-1 flex-col px-2.5">
         {/* Two lines of product name, at the card's line height. */}
         <Skeleton className="mt-2 h-[1.4rem] w-full" />
         <Skeleton className="mt-1 mb-4 h-[1.4rem] w-3/4" />
