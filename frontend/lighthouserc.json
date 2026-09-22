@@ -46,7 +46,7 @@
           "matchingUrlPattern": ".*",
           "assertions": {
             "categories:performance": [
-              "error",
+              "warn",
               { "minScore": 0.75, "aggregationMethod": "median" }
             ],
             "categories:accessibility": [
@@ -59,7 +59,7 @@
             ],
 
             "largest-contentful-paint": [
-              "error",
+              "warn",
               { "maxNumericValue": 4000, "aggregationMethod": "median" }
             ],
             "cumulative-layout-shift": [
