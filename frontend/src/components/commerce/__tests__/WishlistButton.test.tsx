@@ -54,6 +54,9 @@ describe("WishlistButton", () => {
         resolveSave = resolve;
       }),
     );
+    // The save invalidates the Wishlist tag, so a refetch follows; without a
+    // default the mock hands back undefined and fetchBaseQuery throws.
+    fetchMock.mockResolvedValue(json(wishlistWith([product])));
 
     renderWithProviders(<WishlistButton product={product} />);
 
@@ -77,6 +80,7 @@ describe("WishlistButton", () => {
     fetchMock.mockResolvedValueOnce(
       json({ error: { code: "INTERNAL", message: "boom" } }, 500),
     );
+    fetchMock.mockResolvedValue(json(wishlistWith([])));
 
     renderWithProviders(<WishlistButton product={product} />);
 
