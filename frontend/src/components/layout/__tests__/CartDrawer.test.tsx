@@ -35,7 +35,11 @@ describe("CartDrawer focus management", () => {
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
+    // Draining the queue flushes the drawer's own frames and Link's idle
+    // callback, both of which set state — hence act.
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     jest.useRealTimers();
     jest.restoreAllMocks();
   });

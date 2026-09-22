@@ -16,14 +16,16 @@ COPY . .
 # NEXT_PUBLIC_* values are inlined here, so they are build inputs, not runtime
 # config. A staging image and a production image are therefore different builds.
 #
-# No default for the site URL: next.config.ts rejects a missing or loopback
-# origin in a production build, because it is baked into every canonical tag
-# and cannot be corrected without rebuilding. A real image passes
-# `--build-arg NEXT_PUBLIC_SITE_URL=https://bodybioticsgh.com`. CI only builds
-# this to prove the Dockerfile still works and never ships it, so it passes
-# `--build-arg ALLOW_LOCAL_SITE_URL=1` instead.
+# The site URL keeps its localhost default because lib/env.ts validates it as a
+# URL and an empty string fails that schema before anything else runs. The
+# default is not a way to ship a broken image: next.config.ts rejects a
+# loopback origin in a production build, so forgetting
+# `--build-arg NEXT_PUBLIC_SITE_URL=https://bodybioticsgh.com` fails the build
+# rather than baking localhost into every canonical tag. CI builds this image
+# only to prove the Dockerfile still works and never ships it, so it opts out
+# with `--build-arg ALLOW_LOCAL_SITE_URL=1`.
 ARG NEXT_PUBLIC_API_URL=/api
-ARG NEXT_PUBLIC_SITE_URL
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ARG ALLOW_LOCAL_SITE_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
