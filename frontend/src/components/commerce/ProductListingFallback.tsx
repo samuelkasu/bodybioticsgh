@@ -39,6 +39,9 @@ export function ProductListingFallback() {
           <div className="mb-3 min-h-5" />
 
           <ProductGrid products={[]} isLoading skeletonCount={PRODUCTS_PER_PAGE} />
+
+          {/* The pager the listing will render once it knows the page count. */}
+          <div className="product-pager-hold" />
         </div>
       </div>
     </section>
