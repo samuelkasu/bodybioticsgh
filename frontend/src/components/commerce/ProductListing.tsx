@@ -192,13 +192,17 @@ export function ProductListing({
             </div>
           )}
 
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            buildHref={(next) => buildHref({ page: String(next) })}
-            onLoadMore={lastLoaded < totalPages ? () => void onLoadMore() : undefined}
-            isLoadingMore={isLoadingMore}
-          />
+          <div className={isLoading ? "product-pager-hold" : undefined}>
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              buildHref={(next) => buildHref({ page: String(next) })}
+              onLoadMore={
+                lastLoaded < totalPages ? () => void onLoadMore() : undefined
+              }
+              isLoadingMore={isLoadingMore}
+            />
+          </div>
         </div>
       </div>
     </section>
