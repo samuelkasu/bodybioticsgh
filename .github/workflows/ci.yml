@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  # A new push supersedes the running job; no point paying for a stale one.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  DOTNET_VERSION: "10.0.x"
+
+jobs:
+  # Fast feedback: no database, no browsers. Fails in ~2 minutes when it fails.
+  frontend:
+    name: frontend — lint, types, unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test -- --coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: frontend/coverage/
+          retention-days: 7
+
+  backend:
+    name: backend — build and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - run: dotnet restore
+      - run: dotnet build --no-restore --configuration Release
+      # Warnings-as-errors belongs in Directory.Build.props, not a CI flag, so
+      # a local build fails the same way this one does.
+      - run: dotnet test --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-results
+          path: backend/**/TestResults/*.trx
+          retention-days: 7
+
+  e2e:
+    name: e2e (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    strategy:
+      fail-fast: false
+      matrix:
+        # The two that ship to customers; desktop-chrome runs locally only.
+        project: [android-chrome, ios-safari]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bodybiotics
+          POSTGRES_PASSWORD: bodybiotics
+          POSTGRES_DB: bodybiotics_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bodybiotics"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # The API migrates and seeds itself on start in this configuration, so
+      # the e2e run gets a known catalogue without a separate step.
+      App__ConnectionString: Host=localhost;Port=5432;Database=bodybiotics_test;Username=bodybiotics;Password=bodybiotics
+      App__MigrateOnStart: "true"
+      ASPNETCORE_URLS: http://127.0.0.1:5080
+      API_ORIGIN: http://127.0.0.1:5080
+      NEXT_PUBLIC_API_URL: /api
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - run: npm ci
+        working-directory: frontend
+      - name: Start API
+        working-directory: backend
+        run: |
+          dotnet run --project src/BodyBiotics.Api --configuration Release &
+          # The browser talks to Next, which proxies here; if the API is not up
+          # the whole suite fails with confusing 502s instead of one clear error.
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:5080/api/health && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:5080/api/health
+      # Only the browser under test, to keep the download off the critical path.
+      - run: npx playwright install --with-deps ${{ matrix.project == 'ios-safari' && 'webkit' || 'chromium' }}
+        working-directory: frontend
+      - run: npx playwright test --project=${{ matrix.project }}
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.project }}
+          path: frontend/playwright-report/
+          retention-days: 7
+
+  lighthouse:
+    name: lighthouse budgets
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bodybiotics
+          POSTGRES_PASSWORD: bodybiotics
+          POSTGRES_DB: bodybiotics_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bodybiotics"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # A score measured against an empty catalogue is meaningless — the pages
+      # being audited are the ones that render 24 product photos.
+      App__ConnectionString: Host=localhost;Port=5432;Database=bodybiotics_test;Username=bodybiotics;Password=bodybiotics
+      App__MigrateOnStart: "true"
+      ASPNETCORE_URLS: http://127.0.0.1:5080
+      API_ORIGIN: http://127.0.0.1:5080
+      NEXT_PUBLIC_API_URL: /api
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - run: npm ci
+        working-directory: frontend
+      - name: Start API
+        working-directory: backend
+        run: |
+          dotnet run --project src/BodyBiotics.Api --configuration Release &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:5080/api/health && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:5080/api/health
+      - run: npm run build
+        working-directory: frontend
+      # lhci starts the server itself, runs each URL three times and asserts on
+      # the median — a single run on a shared CI box is too noisy to gate on.
+      - run: npx lhci autorun
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-reports
+          path: frontend/.lighthouseci/
+          retention-days: 7
+
+  docker:
+    name: docker image builds (${{ matrix.workspace }})
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    strategy:
+      matrix:
+        workspace: [frontend, backend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.workspace }}
+          # Build only on PRs; wire push + registry credentials when deploying.
+          push: false
+          cache-from: type=gha,scope=${{ matrix.workspace }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.workspace }}

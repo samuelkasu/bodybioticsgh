@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BodyBiotics.Api/BodyBiotics.Api.csproj" />
+    <Project Path="src/BodyBiotics.Domain/BodyBiotics.Domain.csproj" />
+    <Project Path="src/BodyBiotics.Infrastructure/BodyBiotics.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BodyBiotics.Tests/BodyBiotics.Tests.csproj" />
+  </Folder>
+</Solution>
