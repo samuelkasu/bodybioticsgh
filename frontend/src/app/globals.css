@@ -47,9 +47,17 @@
   --color-pager: #cc3366;
   --color-lime: #8dc916;
 
-  --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-crimson-pro), ui-serif, Georgia, serif;
-  --font-script: var(--font-wahiyang), var(--font-crimson-pro), ui-serif, serif;
+  /* --font-cedi comes first everywhere it appears: it covers U+20B5 only, so
+     every other character falls straight through to the face behind it. See
+     the localFont in layout.tsx for why it exists. */
+  --font-sans:
+    var(--font-cedi), var(--font-inter-tight), ui-sans-serif, system-ui,
+    sans-serif;
+  --font-display:
+    var(--font-cedi), var(--font-crimson-pro), ui-serif, Georgia, serif;
+  --font-script:
+    var(--font-wahiyang), var(--font-cedi), var(--font-crimson-pro), ui-serif,
+    serif;
 
   /**
    * Type scale. The original was a page builder, so its type was a pile of
@@ -608,6 +616,48 @@
     animation:
       splash-fill 0.45s ease-in-out infinite alternate,
       splash-wave 0.7s linear infinite;
+  }
+
+  /**
+   * Holds the pager's place while results are in flight.
+   *
+   * `totalPages` comes from the response, so until it lands <Pagination> has
+   * nothing to render and returns null — then 141px of page links and a "load
+   * more" button appear under the grid and shove the footer down. Reserving it
+   * is the same trick the results count already uses with `min-h-5`.
+   *
+   * Two rows on a phone, one from `sm` up, which is where the links stop
+   * wrapping. A shop small enough to fit on one page has no pager at all and
+   * still collapses this once — worth it against a shift on every other load.
+   */
+  .product-pager-hold {
+    min-height: 8.8rem;
+  }
+
+  @media (width >= 40rem) {
+    .product-pager-hold {
+      min-height: 5.75rem;
+    }
+  }
+
+  /**
+   * Everything on a product card below the photo.
+   *
+   * The grid stretches every card in a row to the tallest one, and a card is
+   * only as tall as its content: one with "Only 3 left" under the price is a
+   * caption line taller than one without. So a row's height depended on which
+   * products happened to land in it, which no uniform skeleton can predict —
+   * <ProductListingFallback> stood 16px short per row and, over 12 rows of
+   * results, dropped the footer 335px down the page the moment the listing
+   * hydrated. That was 0.86 of /shop's 0.87 CLS.
+   *
+   * Holding the body open to its tallest case — two lines of name, price, a
+   * stock caption, the button — makes every card the same height whether or
+   * not it has a caption, so the skeleton matches by construction rather than
+   * by a pixel count someone has to keep in step.
+   */
+  .product-card-body {
+    min-height: 11.5625rem;
   }
 
   /**
