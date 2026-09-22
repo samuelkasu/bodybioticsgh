@@ -188,7 +188,7 @@ async function main(): Promise<void> {
   const write = process.argv.includes("--write");
 
   const catalog = JSON.parse(await readFile(CATALOG, "utf8")) as Catalog;
-  const known = new Set(catalog.products.map((product) => product.slug));
+  const known = new Set(catalog.products.map((product) => product.slug)); 
 
   // The old site's own list of what it considers indexable.
   const index = await (await fetch(`${OLD_SITE}/sitemap_index.xml`)).text();
