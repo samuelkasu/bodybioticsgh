@@ -4,9 +4,11 @@ test.describe("storefront journey", () => {
   test("home page shows the brand and a product grid", async ({ page }) => {
     await page.goto("/");
 
+    // The hero's words live in the artwork, so the only <h1> is screen-reader
+    // only — attached rather than visible is the most it can be asserted to be.
     await expect(
-      page.getByRole("heading", { name: /elevate your skin tone/i }),
-    ).toBeVisible();
+      page.getByRole("heading", { level: 1, name: /radiant/i }),
+    ).toBeAttached();
     // Rendered by RTK Query against the real API, so this also proves the proxy.
     await expect(page.getByRole("button", { name: /^Add to cart$/ }).first()).toBeVisible(
       {
@@ -100,7 +102,14 @@ test.describe("storefront journey", () => {
     // that is about to change.
     await expect(page.getByText(/choose an area/i)).toBeVisible();
 
-    await page.getByLabel(/delivery area/i).selectOption("accra-central");
+    // The zones arrive from the API after the form first paints, and the
+    // summary re-renders when they land — selecting before then hits a select
+    // that is about to be replaced.
+    const zone = page.getByLabel(/delivery area/i);
+    await expect(zone.locator("option[value='accra-central']")).toBeAttached({
+      timeout: 15_000,
+    });
+    await zone.selectOption("accra-central");
 
     // The amount lands on the button itself, so the customer is not looking
     // away from the control they are about to press.
