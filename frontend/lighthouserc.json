@@ -1,0 +1,79 @@
+{
+  "ci": {
+    "collect": {
+      "url": [
+        "http://127.0.0.1:3100/",
+        "http://127.0.0.1:3100/shop",
+        "http://127.0.0.1:3100/cart"
+      ],
+      "numberOfRuns": 3,
+      "startServerCommand": "npx next start --port 3100",
+      "startServerReadyPattern": "Ready in",
+      "startServerReadyTimeout": 120000,
+      "settings": {
+        "formFactor": "mobile",
+        "screenEmulation": {
+          "mobile": true,
+          "width": 412,
+          "height": 915,
+          "deviceScaleFactor": 2.625,
+          "disabled": false
+        },
+        "throttlingMethod": "simulate",
+        "throttling": {
+          "rttMs": 300,
+          "throughputKbps": 1400,
+          "cpuSlowdownMultiplier": 4,
+          "requestLatencyMs": 0,
+          "downloadThroughputKbps": 0,
+          "uploadThroughputKbps": 0
+        },
+        "skipAudits": ["is-on-https", "redirects-http", "uses-http2"]
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": [
+          "error",
+          { "minScore": 0.75, "aggregationMethod": "median" }
+        ],
+        "categories:accessibility": [
+          "error",
+          { "minScore": 0.9, "aggregationMethod": "median" }
+        ],
+        "categories:seo": ["error", { "minScore": 0.9, "aggregationMethod": "median" }],
+        "categories:best-practices": [
+          "warn",
+          { "minScore": 0.9, "aggregationMethod": "median" }
+        ],
+
+        "largest-contentful-paint": [
+          "error",
+          { "maxNumericValue": 4000, "aggregationMethod": "median" }
+        ],
+        "cumulative-layout-shift": [
+          "error",
+          { "maxNumericValue": 0.1, "aggregationMethod": "median" }
+        ],
+        "total-blocking-time": [
+          "warn",
+          { "maxNumericValue": 600, "aggregationMethod": "median" }
+        ],
+        "total-byte-weight": [
+          "error",
+          { "maxNumericValue": 2500000, "aggregationMethod": "median" }
+        ],
+
+        "viewport": "error",
+
+        "unused-javascript": "off",
+        "uses-long-cache-ttl": "off",
+        "errors-in-console": "off"
+      }
+    },
+    "upload": {
+      "target": "filesystem",
+      "outputDir": "./.lighthouseci"
+    }
+  }
+}
