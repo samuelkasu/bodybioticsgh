@@ -36,7 +36,16 @@ const isDev = process.env.NODE_ENV === "development";
 // Checked at config load, which runs for `next build` and `next start` but also
 // for `serwist build`, so the service worker cannot be generated against the
 // wrong origin either.
-if (process.env.NODE_ENV === "production") {
+//
+// ALLOW_LOCAL_SITE_URL=1 is the one way past it, and exists because CI builds
+// the app against a loopback origin on purpose: the e2e suite and the
+// Lighthouse run drive a real production build on 127.0.0.1, and the docker
+// job builds the image to prove the Dockerfile still works, not to ship it.
+// None of those are deployed. A release build passes the real domain and does
+// not set this, so the check still stands where it matters.
+const allowLocalSiteUrl = process.env.ALLOW_LOCAL_SITE_URL === "1";
+
+if (process.env.NODE_ENV === "production" && !allowLocalSiteUrl) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
   if (!siteUrl) {

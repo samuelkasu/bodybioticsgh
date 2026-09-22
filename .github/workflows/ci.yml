@@ -107,6 +107,9 @@ jobs:
       API_ORIGIN: http://127.0.0.1:5080
       NEXT_PUBLIC_API_URL: /api
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3100
+      # next.config.ts refuses a loopback origin in a production build so a
+      # deployed image cannot bake in localhost. This build is never deployed.
+      ALLOW_LOCAL_SITE_URL: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -168,6 +171,9 @@ jobs:
       API_ORIGIN: http://127.0.0.1:5080
       NEXT_PUBLIC_API_URL: /api
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3100
+      # next.config.ts refuses a loopback origin in a production build so a
+      # deployed image cannot bake in localhost. This build is never deployed.
+      ALLOW_LOCAL_SITE_URL: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -217,5 +223,10 @@ jobs:
           context: ./${{ matrix.workspace }}
           # Build only on PRs; wire push + registry credentials when deploying.
           push: false
+          # The frontend build refuses a missing site URL so a shipped image
+          # cannot bake in localhost. This one is thrown away, so it opts out
+          # rather than inventing a domain. A release build passes the real one.
+          build-args: |
+            ALLOW_LOCAL_SITE_URL=1
           cache-from: type=gha,scope=${{ matrix.workspace }}
           cache-to: type=gha,mode=max,scope=${{ matrix.workspace }}

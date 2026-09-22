@@ -2,28 +2,36 @@
 
 # Multi-stage so the runtime image carries no toolchain, no dev dependencies
 # and no source: smaller image, smaller attack surface, faster cold starts.
-FROM node:22-alpine AS deps
+# 24, not 22: npm 10 cannot resolve this lockfile. See the note on
+# NODE_VERSION in .github/workflows/ci.yml.
+FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY prisma ./prisma
-COPY prisma.config.ts ./
-# `npm ci` runs postinstall (prisma generate), which needs the schema above.
 RUN npm ci
 
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # NEXT_PUBLIC_* values are inlined here, so they are build inputs, not runtime
 # config. A staging image and a production image are therefore different builds.
+#
+# No default for the site URL: next.config.ts rejects a missing or loopback
+# origin in a production build, because it is baked into every canonical tag
+# and cannot be corrected without rebuilding. A real image passes
+# `--build-arg NEXT_PUBLIC_SITE_URL=https://bodybioticsgh.com`. CI only builds
+# this to prove the Dockerfile still works and never ships it, so it passes
+# `--build-arg ALLOW_LOCAL_SITE_URL=1` instead.
 ARG NEXT_PUBLIC_API_URL=/api
-ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
+ARG NEXT_PUBLIC_SITE_URL
+ARG ALLOW_LOCAL_SITE_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
+    ALLOW_LOCAL_SITE_URL=$ALLOW_LOCAL_SITE_URL \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
