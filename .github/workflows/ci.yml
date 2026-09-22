@@ -11,7 +11,19 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: "22"
+  # 24, not 22, because of the npm that ships with each.
+  #
+  # `@testing-library/jest-dom` declares an optional peer on `vitest >= 0.32`,
+  # which npm resolves to vitest 4. Walking vitest 4's own optional peer set
+  # makes npm 10's dependency resolver dereference a null node and die with
+  # "Cannot read properties of null (reading 'edgesOut')" — `npm ci` never
+  # gets as far as installing anything. Node 22 ships npm 10; Node 24 ships
+  # npm 11, which resolves the same lockfile without complaint.
+  #
+  # Nothing here uses vitest — the suite is Jest. The constraint is npm's
+  # version, not Node's, so a Node 22 runner with npm 11 installed over it
+  # would work too; pinning the Node version is the smaller moving part.
+  NODE_VERSION: "24"
   DOTNET_VERSION: "10.0.x"
 
 jobs:
