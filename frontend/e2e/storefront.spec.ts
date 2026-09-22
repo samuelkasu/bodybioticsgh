@@ -125,7 +125,9 @@ test.describe("storefront journey", () => {
 
     // The amount lands on the button itself, so the customer is not looking
     // away from the control they are about to press.
-    await expect(page.getByRole("button", { name: /place order · GHS/i })).toBeVisible({
+    // "₵", not "GHS": formatMoney prints the cedi sign alone, as the previous
+    // storefront did.
+    await expect(page.getByRole("button", { name: /place order · ₵/i })).toBeVisible({
       timeout: 15_000,
     });
   });
