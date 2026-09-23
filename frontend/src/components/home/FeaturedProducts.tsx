@@ -10,10 +10,8 @@ import { Reveal } from "@/components/ui/Reveal";
 import { ErrorState } from "@/components/ui/Feedback";
 import { SearchIcon } from "@/components/ui/Icons";
 import { apiErrorMessage } from "@/lib/api/http";
-import { selectIsLowBandwidth } from "@/lib/features/network/networkSlice";
 import { useGetProductsQuery } from "@/lib/features/products/productsApi";
 import type { ProductSort } from "@/lib/features/products/types";
-import { useAppSelector } from "@/lib/store/hooks";
 import { cn } from "@/lib/utils/cn";
 
 export type FeaturedProductsProps = {
@@ -35,13 +33,16 @@ export function FeaturedProducts({
   tone = "cream",
 }: FeaturedProductsProps) {
   const router = useRouter();
-  const isLowBandwidth = useAppSelector(selectIsLowBandwidth);
   const [search, setSearch] = useState("");
 
-  // Half the rows on a metered or slow link: fewer images, far less data.
-  const perPage = isLowBandwidth ? Math.ceil(limit / 2) : limit;
+  // Always the full `limit`, even on a slow link. The skeleton reserves
+  // `limit` cards before the connection is known, so halving the rows made
+  // three rows collapse when the products landed and shoved the whole page up
+  // (CLS 0.88 on mobile). The saving was a few KB of JSON anyway: every card
+  // past the second lazy-loads its image, so the lower rows cost nothing on a
+  // slow link until someone scrolls to them.
   const { data, isLoading, isError, error, refetch } = useGetProductsQuery({
-    perPage,
+    perPage: limit,
     sort,
   });
 
@@ -114,8 +115,6 @@ export function FeaturedProducts({
             <ProductGrid
               products={data?.items ?? []}
               isLoading={isLoading}
-              // Not perPage: the low-bandwidth flag only lands after mount, so
-              // deriving the skeleton count from it breaks hydration.
               skeletonCount={limit}
             />
           )}
