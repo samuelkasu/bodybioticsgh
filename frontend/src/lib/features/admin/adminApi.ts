@@ -12,6 +12,64 @@ export type AdminOrderLine = {
   lineTotalMinor: number;
   /** This line's share of the discount, for working out a partial refund. */
   discountMinor: number;
+  /** Units refunds have already put back on sale. */
+  restockedQuantity: number;
+};
+
+/** One trip with the order. Every attempt is kept, failed ones included. */
+export type AdminDelivery = {
+  id: string;
+  method: "RIDER" | "COURIER";
+  courierName: string | null;
+  riderName: string;
+  riderPhone: string;
+  notes: string | null;
+  status: "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED";
+  dispatchedAt: string;
+  deliveredAt: string | null;
+  failedAt: string | null;
+  failureReason: string | null;
+  collectedMinor: number | null;
+  collectedVia: "cash" | "mobilemoney" | null;
+};
+
+export type RefundMethod = "MOBILE_MONEY" | "CASH" | "HUBTEL" | "BANK_TRANSFER";
+
+export type AdminRefund = {
+  id: string;
+  amountMinor: number;
+  method: RefundMethod;
+  reason: string;
+  reference: string | null;
+  restockedUnits: number;
+  createdAt: string;
+};
+
+export type DispatchRequest = {
+  reference: string;
+  method: "RIDER" | "COURIER";
+  riderName: string;
+  riderPhone: string;
+  courierName?: string;
+  notes?: string;
+};
+
+export type DeliveredRequest = {
+  reference: string;
+  /** Required on a pay-on-delivery order: what the rider took at the door. */
+  collectedMinor?: number;
+  collectedVia?: "cash" | "mobilemoney";
+};
+
+export type RefundRequest = {
+  /** The order's. */
+  reference: string;
+  amountMinor: number;
+  method: RefundMethod;
+  reason: string;
+  /** The Mobile Money or bank transaction id. Sent as the body's `reference`. */
+  transactionReference?: string;
+  restock?: { productId: string; quantity: number }[];
 };
 
 export type AdminOrder = {
@@ -38,6 +96,14 @@ export type AdminOrder = {
   createdAt: string;
   updatedAt: string;
   lines: AdminOrderLine[];
+  paymentMethod: "ON_DELIVERY" | "HUBTEL";
+  paidAt: string | null;
+  /** What was actually received — the ceiling on refunds. */
+  amountPaidMinor: number;
+  refundedMinor: number;
+  refundableMinor: number;
+  deliveries: AdminDelivery[];
+  refunds: AdminRefund[];
 };
 
 export type AdminOrderQuery = {
@@ -86,6 +152,12 @@ export type ProductPatch = {
   productId: string;
   priceMinor?: number;
   stock?: number;
+  /**
+   * The stock the form was showing, required with `stock`. The API refuses the
+   * save if orders have moved it since, rather than let a form left open undo
+   * those sales.
+   */
+  expectedStock?: number;
   active?: boolean;
   salePriceMinor?: number;
   saleStartsAt?: string;
@@ -142,6 +214,43 @@ export const adminApi = baseApi.injectEndpoints({
       invalidatesTags: ["Order", "Product"],
     }),
 
+    adminDispatchOrder: build.mutation<AdminOrder, DispatchRequest>({
+      query: ({ reference, ...body }) => ({
+        url: `/admin/orders/${encodeURIComponent(reference)}/dispatch`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Order"],
+    }),
+
+    adminCompleteDelivery: build.mutation<AdminOrder, DeliveredRequest>({
+      query: ({ reference, ...body }) => ({
+        url: `/admin/orders/${encodeURIComponent(reference)}/delivered`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Order"],
+    }),
+
+    adminFailDelivery: build.mutation<AdminOrder, { reference: string; reason: string }>({
+      query: ({ reference, reason }) => ({
+        url: `/admin/orders/${encodeURIComponent(reference)}/delivery-failed`,
+        method: "POST",
+        body: { reason },
+      }),
+      invalidatesTags: ["Order"],
+    }),
+
+    adminRecordRefund: build.mutation<AdminOrder, RefundRequest>({
+      query: ({ reference, transactionReference, ...body }) => ({
+        url: `/admin/orders/${encodeURIComponent(reference)}/refunds`,
+        method: "POST",
+        body: { ...body, reference: transactionReference },
+      }),
+      // A refund can put units back on sale.
+      invalidatesTags: ["Order", "Product"],
+    }),
+
     adminProducts: build.query<Paginated<AdminProduct>, AdminProductQuery>({
       query: ({ search, page = 1, perPage = 25 }) => ({
         url: "/admin/products",
@@ -165,6 +274,10 @@ export const {
   useAdminOrdersQuery,
   useAdminOrderQuery,
   useAdminUpdateOrderStatusMutation,
+  useAdminDispatchOrderMutation,
+  useAdminCompleteDeliveryMutation,
+  useAdminFailDeliveryMutation,
+  useAdminRecordRefundMutation,
   useAdminProductsQuery,
   useAdminUpdateProductMutation,
 } = adminApi;
