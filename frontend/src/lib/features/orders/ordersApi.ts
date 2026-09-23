@@ -1,7 +1,9 @@
 import { baseApi } from "@/lib/api/baseApi";
 import type { Currency } from "@/lib/features/products/types";
 
-export type OrderStatus = "PENDING" | "PAID" | "FULFILLED" | "CANCELLED" | "REFUNDED";
+/** DISPATCHED is out for delivery; FULFILLED is delivered. */
+export type OrderStatus =
+  "PENDING" | "PAID" | "DISPATCHED" | "FULFILLED" | "CANCELLED" | "REFUNDED";
 
 export type OrderLine = {
   productId: string;
