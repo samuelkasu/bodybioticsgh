@@ -22,6 +22,7 @@ const PAYMENT_POLL_MS = 4_000;
 const STATUS_COPY: Record<string, string> = {
   PENDING: "We have your order and will call to confirm delivery.",
   PAID: "Payment received. Your order is being prepared.",
+  DISPATCHED: "On its way. The rider will call you when they are close.",
   FULFILLED: "Delivered. Thank you for shopping with us.",
   CANCELLED: "This order was cancelled.",
   REFUNDED: "This order was refunded.",
