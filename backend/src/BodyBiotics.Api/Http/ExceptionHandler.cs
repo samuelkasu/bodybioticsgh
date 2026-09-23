@@ -1,5 +1,7 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace BodyBiotics.Api.Http;
 
@@ -27,6 +29,20 @@ public sealed partial class ApiExceptionHandler(ILogger<ApiExceptionHandler> log
                         group => ToCamelCase(group.Key),
                         group => group.Select(failure => failure.ErrorMessage).ToArray())),
             BadHttpRequestException => (ApiErrorCode.BadRequest, "Malformed request", null),
+            // Someone else changed the same row between this request reading
+            // and writing it. Nothing was saved, and trying again will see the
+            // new values.
+            DbUpdateConcurrencyException => (
+                ApiErrorCode.Conflict,
+                "This was changed by someone else at the same moment. Please try again.",
+                null),
+            // Two requests inserting the same unique value at once: the same
+            // email registered twice, a double-submitted review. The pre-check
+            // saw no row for either; the index refused the second.
+            DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } } => (
+                ApiErrorCode.Conflict,
+                "That already exists. Refresh and try again.",
+                null),
             OperationCanceledException when httpContext.RequestAborted.IsCancellationRequested =>
                 (ApiErrorCode.BadRequest, "Request cancelled", null),
             _ => (ApiErrorCode.Internal, "Something went wrong", null),
