@@ -57,15 +57,18 @@ public sealed class CheckoutService(
             return (ToDto(replay), false);
         }
 
-        var cart = await carts.FindAsync(owner, cancellationToken);
-        if (cart is null || cart.Items.Count == 0)
-        {
-            throw new ApiException(ApiErrorCode.BadRequest, "Your cart is empty");
-        }
-
         var order = await unitOfWork.InTransactionAsync(
             async token =>
             {
+                // Loaded in here, not before: a rerun after a stock conflict
+                // starts with nothing tracked, and the cart it clears has to be
+                // one it loaded itself.
+                var cart = await carts.FindAsync(owner, token);
+                if (cart is null || cart.Items.Count == 0)
+                {
+                    throw new ApiException(ApiErrorCode.BadRequest, "Your cart is empty");
+                }
+
                 // Re-read inside the transaction: price and stock may have
                 // changed between the customer loading the page and paying.
                 var ids = cart.Items.Select(item => item.ProductId).ToList();
@@ -182,8 +185,9 @@ public sealed class CheckoutService(
                 orders.Add(created);
 
                 // Counted inside the transaction, so two checkouts racing for
-                // the last use of a code cannot both win: the second commits
-                // against a counter the first already moved.
+                // the last use of a code cannot both win: the coupon's xmin
+                // token fails the second one's write, and its rerun reads the
+                // counter the first already moved.
                 if (priced.Coupon is { } redeemed)
                 {
                     pricing.Redeem(redeemed, created, userId, priced.Pricing.DiscountMinor);
@@ -254,29 +258,40 @@ public sealed class CheckoutService(
             ? null
             : string.Join(", ", priced.Pricing.Discounts.Select(entry => entry.Label));
 
-    private async Task ReleaseAsync(Order order, CancellationToken cancellationToken)
-    {
-        if (!order.TryTransitionTo(OrderStatus.Cancelled))
-        {
-            return;
-        }
+    // Through the unit of work so a checkout committing against the same
+    // stock mid-release makes this retry rather than fail, which would leave
+    // an unpayable order Pending with its items held out of the catalogue.
+    private Task<bool> ReleaseAsync(Order placed, CancellationToken cancellationToken) =>
+        unitOfWork.InTransactionAsync(
+            async token =>
+            {
+                // Looked up again because a rerun has discarded the tracked
+                // copy; on the first pass this returns that same instance.
+                // Checkout validates RequestId as required, so it is set here.
+                var order = await orders.FindByRequestIdAsync(placed.RequestId!, token);
+                if (order is null || !order.TryTransitionTo(OrderStatus.Cancelled))
+                {
+                    return false;
+                }
 
-        // The coupon goes back with the stock. A gateway that refused the
-        // payment has not cost the customer their single-use code.
-        await pricing.ReleaseRedemptionAsync(order, cancellationToken);
+                // The coupon goes back with the stock. A gateway that refused
+                // the payment has not cost the customer their single-use code.
+                await pricing.ReleaseRedemptionAsync(order, token);
 
-        var ids = order.Items.Select(item => item.ProductId).ToList();
-        var catalogue = await products.FindByIdsAsync(ids, cancellationToken);
+                var ids = order.Items.Select(item => item.ProductId).ToList();
+                var catalogue = await products.FindByIdsAsync(ids, token);
 
-        foreach (var item in order.Items)
-        {
-            catalogue
-                .FirstOrDefault(product => product.Id == item.ProductId)
-                ?.Release(item.Quantity);
-        }
+                foreach (var item in order.Items)
+                {
+                    catalogue
+                        .FirstOrDefault(product => product.Id == item.ProductId)
+                        ?.Release(item.Quantity);
+                }
 
-        await orders.SaveChangesAsync(cancellationToken);
-    }
+                await orders.SaveChangesAsync(token);
+                return true;
+            },
+            cancellationToken);
 
     public async Task<OrderDto> GetAsync(
         string reference,
