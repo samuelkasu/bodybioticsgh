@@ -19,6 +19,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<WishlistItem> WishlistItems => Set<WishlistItem>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<Delivery> Deliveries => Set<Delivery>();
+    public DbSet<Refund> Refunds => Set<Refund>();
     public DbSet<Coupon> Coupons => Set<Coupon>();
     public DbSet<CouponRedemption> CouponRedemptions => Set<CouponRedemption>();
     public DbSet<Promotion> Promotions => Set<Promotion>();
