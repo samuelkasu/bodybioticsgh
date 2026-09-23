@@ -89,6 +89,13 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         // Computed from Stock; there is no column behind it.
         builder.Ignore(product => product.InStock);
 
+        // Mapped onto Postgres's xmin system column, which moves on every write
+        // to the row. Checkout reads stock, subtracts, and writes it back; with
+        // this token two checkouts racing for the last unit no longer both
+        // succeed — the second fails its update and is retried against the
+        // stock the first one left.
+        builder.Property<uint>("Version").IsRowVersion();
+
         builder
             .HasOne(product => product.Category)
             .WithMany(category => category.Products)
