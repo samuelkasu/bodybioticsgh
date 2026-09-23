@@ -2,6 +2,7 @@ using BodyBiotics.Api.Features.Notifications;
 using BodyBiotics.Api.Features.Products;
 using BodyBiotics.Api.Http;
 using BodyBiotics.Domain.Abstractions;
+using BodyBiotics.Domain.Common;
 using BodyBiotics.Domain.Entities;
 using FluentValidation;
 
@@ -16,7 +17,11 @@ public sealed class AdminService(
     OrderNotifier notifications,
     Promotions.PricingService pricing,
     IValidator<UpdateOrderStatusRequest> statusValidator,
-    IValidator<UpdateProductRequest> productValidator)
+    IValidator<UpdateProductRequest> productValidator,
+    IValidator<DispatchOrderRequest> dispatchValidator,
+    IValidator<CompleteDeliveryRequest> deliveredValidator,
+    IValidator<FailDeliveryRequest> failedValidator,
+    IValidator<RecordRefundRequest> refundValidator)
 {
     /// <summary>Same ceiling as the storefront: an unbounded page is a data dump.</summary>
     public const int MaxPerPage = 100;
@@ -85,8 +90,31 @@ public sealed class AdminService(
 
         var next = ParseStatus(request.Status);
 
-        var order = await admin.FindOrderAsync(reference, cancellationToken)
-            ?? throw new ApiException(ApiErrorCode.NotFound, $"No order {reference}");
+        // These three carry details a bare status cannot: who took it, what
+        // they collected, how much went back. Each has its own action.
+        var instead = next switch
+        {
+            OrderStatus.Dispatched => "Use Dispatch, which records who is taking it.",
+            OrderStatus.Fulfilled => "Use Mark delivered on an order that is out for delivery.",
+            OrderStatus.Refunded => "Use Record refund, which records the amount and how it was returned.",
+            _ => null,
+        };
+
+        if (instead is not null)
+        {
+            throw new ApiException(ApiErrorCode.BadRequest, instead);
+        }
+
+        var order = await FindAsync(reference, cancellationToken);
+
+        if (order.Status == OrderStatus.Dispatched)
+        {
+            // The state machine lets a dispatched order fall back to Paid or
+            // Pending, but only through TryFailDelivery, which closes the trip.
+            throw new ApiException(
+                ApiErrorCode.Conflict,
+                "This order is out for delivery. Mark it delivered or failed first.");
+        }
 
         var previous = order.Status;
         var wasOpen = order.Status is OrderStatus.Pending or OrderStatus.Paid;
@@ -114,10 +142,256 @@ public sealed class AdminService(
             await pricing.ReleaseRedemptionAsync(order, cancellationToken);
         }
 
+        // Staff marking an order paid means the money arrived outside Hubtel —
+        // a pay-on-delivery order settled early, or a transfer. The full total.
+        if (next == OrderStatus.Paid && previous == OrderStatus.Pending)
+        {
+            order.RecordPayment(order.TotalMinor, DateTimeOffset.UtcNow);
+        }
+
         await admin.SaveChangesAsync(cancellationToken);
         NotifyCustomer(order, previous);
         return ToDto(order);
     }
+
+    /// <summary>
+    /// Sends the order out with a rider or courier. The trip and the status
+    /// change are one save: an order must never read "out for delivery" with
+    /// nobody recorded as carrying it.
+    /// </summary>
+    public async Task<AdminOrderDto> DispatchAsync(
+        string reference,
+        DispatchOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        await dispatchValidator.ValidateAndThrowAsync(request, cancellationToken);
+        // Already checked by the validator; parsed again for the value.
+        if (!TryParseDeliveryMethod(request.Method, out var method))
+        {
+            throw new ApiException(ApiErrorCode.BadRequest, "Method must be RIDER or COURIER.");
+        }
+
+        var order = await FindAsync(reference, cancellationToken);
+
+        if (order.ActiveDelivery is { } active)
+        {
+            throw new ApiException(
+                ApiErrorCode.Conflict,
+                $"This order is already out with {active.RiderName}. Mark that trip delivered or failed first.");
+        }
+
+        if (order.Status == OrderStatus.Pending && order.PaymentMethod == PaymentMethod.Hubtel)
+        {
+            throw new ApiException(
+                ApiErrorCode.Conflict,
+                "This order is waiting for its online payment. It can go out once it is paid.");
+        }
+
+        var delivery = new Delivery
+        {
+            Id = Identifier.New(),
+            OrderId = order.Id,
+            Method = method,
+            CourierName = method == DeliveryMethod.Courier ? request.CourierName?.Trim() : null,
+            RiderName = request.RiderName.Trim(),
+            RiderPhone = request.RiderPhone.Trim(),
+            Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
+        };
+
+        if (!order.TryDispatch(delivery))
+        {
+            throw new ApiException(
+                ApiErrorCode.Conflict,
+                $"An order that is {Describe(order.Status)} cannot go out for delivery.");
+        }
+
+        await admin.SaveChangesAsync(cancellationToken);
+        notifications.Dispatched(order, delivery);
+        return ToDto(order);
+    }
+
+    public async Task<AdminOrderDto> CompleteDeliveryAsync(
+        string reference,
+        CompleteDeliveryRequest request,
+        CancellationToken cancellationToken)
+    {
+        await deliveredValidator.ValidateAndThrowAsync(request, cancellationToken);
+
+        var order = await FindAsync(reference, cancellationToken);
+
+        if (order.Status != OrderStatus.Dispatched || order.ActiveDelivery is null)
+        {
+            throw new ApiException(
+                ApiErrorCode.Conflict,
+                "Only an order that is out for delivery can be marked delivered.");
+        }
+
+        if (order.PaidAt is null)
+        {
+            if (request.CollectedMinor is not { } collected)
+            {
+                throw new ApiException(
+                    ApiErrorCode.BadRequest,
+                    "This order is pay on delivery. Enter what the rider collected — " +
+                    $"{Money.Format(order.TotalMinor, order.Currency)} was due.");
+            }
+
+            // More than the total is a typo, not a tip: it would also lift the
+            // refund ceiling above anything the customer was charged.
+            if (collected > order.TotalMinor)
+            {
+                throw new ApiException(
+                    ApiErrorCode.BadRequest,
+                    $"That is more than the order total of {Money.Format(order.TotalMinor, order.Currency)}.");
+            }
+        }
+
+        // An order paid online ignores any collected figure: nothing changed hands.
+        var collectedMinor = order.PaidAt is null ? request.CollectedMinor : null;
+        var collectedVia = order.PaidAt is null ? request.CollectedVia : null;
+
+        if (!order.TryCompleteDelivery(DateTimeOffset.UtcNow, collectedMinor, collectedVia))
+        {
+            throw new ApiException(ApiErrorCode.Conflict, "That delivery could not be closed.");
+        }
+
+        await admin.SaveChangesAsync(cancellationToken);
+        notifications.Fulfilled(order);
+        return ToDto(order);
+    }
+
+    /// <summary>
+    /// The customer was out, the address was wrong. The trip is kept with its
+    /// reason and the order goes back to where it was, to be sent again or
+    /// cancelled. No email: staff ring the customer about this one.
+    /// </summary>
+    public async Task<AdminOrderDto> FailDeliveryAsync(
+        string reference,
+        FailDeliveryRequest request,
+        CancellationToken cancellationToken)
+    {
+        await failedValidator.ValidateAndThrowAsync(request, cancellationToken);
+
+        var order = await FindAsync(reference, cancellationToken);
+
+        if (!order.TryFailDelivery(request.Reason.Trim(), DateTimeOffset.UtcNow))
+        {
+            throw new ApiException(
+                ApiErrorCode.Conflict,
+                "Only an order that is out for delivery can be marked as failed.");
+        }
+
+        await admin.SaveChangesAsync(cancellationToken);
+        return ToDto(order);
+    }
+
+    /// <summary>
+    /// Records a refund staff have already sent, and puts any returned units
+    /// back on sale. The refund row, the order's running total, its status and
+    /// the stock are one save: a refund recorded without its restock, or a
+    /// restock without its refund, is how the books and the shelves drift
+    /// apart. The order's concurrency token stops two refunds entered at once
+    /// from both fitting under the same ceiling.
+    /// </summary>
+    public async Task<AdminOrderDto> RecordRefundAsync(
+        string reference,
+        RecordRefundRequest request,
+        CancellationToken cancellationToken)
+    {
+        await refundValidator.ValidateAndThrowAsync(request, cancellationToken);
+        if (!TryParseRefundMethod(request.Method, out var method))
+        {
+            throw new ApiException(
+                ApiErrorCode.BadRequest,
+                "Method must be MOBILE_MONEY, CASH, HUBTEL or BANK_TRANSFER.");
+        }
+
+        var order = await FindAsync(reference, cancellationToken);
+
+        if (order.Status is not (OrderStatus.Paid or OrderStatus.Fulfilled))
+        {
+            throw new ApiException(
+                ApiErrorCode.Conflict,
+                order.Status == OrderStatus.Dispatched
+                    ? "This order is out for delivery. Mark it delivered or failed before refunding."
+                    : $"Refunds are recorded against a paid order. This one is {Describe(order.Status)}.");
+        }
+
+        if (request.AmountMinor > order.RefundableMinor)
+        {
+            throw new ApiException(
+                ApiErrorCode.Conflict,
+                $"At most {Money.Format(order.RefundableMinor, order.Currency)} can be refunded: " +
+                $"{Money.Format(order.AmountPaidMinor, order.Currency)} was paid and " +
+                $"{Money.Format(order.RefundedMinor, order.Currency)} has already gone back.");
+        }
+
+        var restock = request.Restock ?? [];
+
+        // Every line checked before any is applied, so one bad line refuses
+        // the whole refund rather than half-restocking it.
+        foreach (var line in restock)
+        {
+            var item = order.Items.FirstOrDefault(candidate => candidate.ProductId == line.ProductId)
+                ?? throw new ApiException(
+                    ApiErrorCode.BadRequest,
+                    $"Product {line.ProductId} is not on this order.");
+
+            var remaining = item.Quantity - item.RestockedQuantity;
+            if (line.Quantity > remaining)
+            {
+                throw new ApiException(
+                    ApiErrorCode.BadRequest,
+                    $"Only {remaining} of {item.Product?.Name ?? "that product"} can go back to stock.");
+            }
+        }
+
+        foreach (var line in restock)
+        {
+            var item = order.Items.First(candidate => candidate.ProductId == line.ProductId);
+            item.TryRestock(line.Quantity);
+            item.Product?.Release(line.Quantity);
+        }
+
+        var refund = new Refund
+        {
+            Id = Identifier.New(),
+            OrderId = order.Id,
+            AmountMinor = request.AmountMinor,
+            Method = method,
+            Reason = request.Reason.Trim(),
+            Reference = string.IsNullOrWhiteSpace(request.Reference) ? null : request.Reference.Trim(),
+            RestockedUnits = restock.Sum(line => line.Quantity),
+        };
+
+        if (!order.TryAddRefund(refund))
+        {
+            throw new ApiException(ApiErrorCode.Conflict, "That refund could not be recorded.");
+        }
+
+        await admin.SaveChangesAsync(cancellationToken);
+        notifications.Refunded(order, refund);
+        return ToDto(order);
+    }
+
+    public static bool TryParseDeliveryMethod(string? value, out DeliveryMethod method) =>
+        Enum.TryParse(value?.Replace("_", string.Empty), ignoreCase: true, out method)
+        && Enum.IsDefined(method);
+
+    public static bool TryParseRefundMethod(string? value, out RefundMethod method) =>
+        Enum.TryParse(value?.Replace("_", string.Empty), ignoreCase: true, out method)
+        && Enum.IsDefined(method);
+
+    private async Task<Order> FindAsync(string reference, CancellationToken cancellationToken) =>
+        await admin.FindOrderAsync(reference, cancellationToken)
+            ?? throw new ApiException(ApiErrorCode.NotFound, $"No order {reference}");
+
+    private static string Describe(OrderStatus status) => status switch
+    {
+        OrderStatus.Dispatched => "out for delivery",
+        OrderStatus.Fulfilled => "delivered",
+        _ => status.ToString().ToLowerInvariant(),
+    };
 
     /// <summary>
     /// Emails the customer about a change they would otherwise only learn about
@@ -146,19 +420,17 @@ public sealed class AdminService(
 
                 break;
 
-            case OrderStatus.Fulfilled:
-                notifications.Fulfilled(order);
-                break;
-
             case OrderStatus.Cancelled:
                 notifications.Cancelled(order);
                 break;
 
+            case OrderStatus.Fulfilled:
+            case OrderStatus.Dispatched:
             case OrderStatus.Refunded:
             case OrderStatus.Pending:
             default:
-                // Refunds are still arranged by hand, so the person issuing one
-                // is already talking to the customer. Nothing automated to add.
+                // Delivery and refunds have their own actions, which send their
+                // own emails with details this path does not have.
                 break;
         }
     }
@@ -191,6 +463,20 @@ public sealed class AdminService(
 
         var product = await admin.FindProductAsync(productId, cancellationToken)
             ?? throw new ApiException(ApiErrorCode.NotFound, "No such product");
+
+        // Compare-and-set, checked before anything is applied so the refusal
+        // carries the product exactly as it is. A plain overwrite would undo
+        // every order placed or cancelled since the form loaded: stock 10,
+        // three sell, and saving "10" puts three units that do not exist back
+        // on sale.
+        if (request.Stock.HasValue && product.Stock != request.ExpectedStock)
+        {
+            throw new ApiException(
+                ApiErrorCode.Conflict,
+                $"Stock changed from {request.ExpectedStock} to {product.Stock} while you were editing, " +
+                "from orders placed or cancelled in the meantime. Nothing was saved — check the number and save again.",
+                AdminProductDto.From(product));
+        }
 
         if (request.PriceMinor is { } price)
         {
@@ -294,5 +580,44 @@ public sealed class AdminService(
             item.UnitPriceMinor,
             item.Quantity,
             item.LineTotalMinor,
-            item.DiscountMinor))]);
+            item.DiscountMinor,
+            item.RestockedQuantity))],
+        order.PaymentMethod == PaymentMethod.Hubtel ? "HUBTEL" : "ON_DELIVERY",
+        order.PaidAt,
+        order.AmountPaidMinor,
+        order.RefundedMinor,
+        order.RefundableMinor,
+        [.. order.Deliveries
+            .OrderBy(delivery => delivery.DispatchedAt)
+            .Select(delivery => new AdminDeliveryDto(
+                delivery.Id,
+                delivery.Method.ToString().ToUpperInvariant(),
+                delivery.CourierName,
+                delivery.RiderName,
+                delivery.RiderPhone,
+                delivery.Notes,
+                delivery.Status == DeliveryStatus.OutForDelivery
+                    ? "OUT_FOR_DELIVERY"
+                    : delivery.Status.ToString().ToUpperInvariant(),
+                delivery.DispatchedAt,
+                delivery.DeliveredAt,
+                delivery.FailedAt,
+                delivery.FailureReason,
+                delivery.CollectedMinor,
+                delivery.CollectedVia))],
+        [.. order.Refunds
+            .OrderBy(refund => refund.CreatedAt)
+            .Select(refund => new AdminRefundDto(
+                refund.Id,
+                refund.AmountMinor,
+                refund.Method switch
+                {
+                    RefundMethod.MobileMoney => "MOBILE_MONEY",
+                    RefundMethod.BankTransfer => "BANK_TRANSFER",
+                    _ => refund.Method.ToString().ToUpperInvariant(),
+                },
+                refund.Reason,
+                refund.Reference,
+                refund.RestockedUnits,
+                refund.CreatedAt))]);
 }
