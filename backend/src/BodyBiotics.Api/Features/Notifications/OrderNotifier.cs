@@ -38,8 +38,14 @@ public sealed class OrderNotifier(EmailOutbox outbox, IOptions<EmailOptions> opt
     public void Paid(Order order) =>
         Queue(order.Email, EmailTemplates.OrderPaid(order, _options.SiteUrl));
 
+    public void Dispatched(Order order, Delivery delivery) =>
+        Queue(order.Email, EmailTemplates.OrderDispatched(order, delivery, _options.SiteUrl));
+
     public void Fulfilled(Order order) =>
         Queue(order.Email, EmailTemplates.OrderFulfilled(order, _options.SiteUrl));
+
+    public void Refunded(Order order, Refund refund) =>
+        Queue(order.Email, EmailTemplates.OrderRefunded(order, refund, _options.SiteUrl));
 
     public void Cancelled(Order order) =>
         Queue(order.Email, EmailTemplates.OrderCancelled(order, _options.SiteUrl));
