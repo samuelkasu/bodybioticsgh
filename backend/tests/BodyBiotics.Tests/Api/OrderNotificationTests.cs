@@ -117,7 +117,11 @@ public class OrderNotificationTests
                 mail.Notifier,
                 new PricingService(new FakePromotionRepository()),
                 new UpdateOrderStatusRequestValidator(),
-                new UpdateProductRequestValidator()),
+                new UpdateProductRequestValidator(),
+            new DispatchOrderRequestValidator(),
+            new CompleteDeliveryRequestValidator(),
+            new FailDeliveryRequestValidator(),
+            new RecordRefundRequestValidator()),
             repository,
             mail);
     }
@@ -176,16 +180,42 @@ public class OrderNotificationTests
         var order = Order(product);
         var (service, _, mail) = BuildAdmin(product, order);
 
-        await service.UpdateOrderStatusAsync(order.Reference, new UpdateOrderStatusRequest("PAID"), default);
-        mail.Drain();
-
-        await service.UpdateOrderStatusAsync(order.Reference, new UpdateOrderStatusRequest("FULFILLED"), default);
+        await service.DispatchAsync(
+            order.Reference,
+            new DispatchOrderRequest("RIDER", "Kofi Boateng", "0241112222"),
+            default);
 
         var dispatch = Assert.Single(mail.DrainFor(Customer));
         Assert.Contains("on its way", dispatch.Subject, StringComparison.OrdinalIgnoreCase);
+        // Who is coming and how to reach them, so an unknown number ringing
+        // is answered rather than ignored.
+        Assert.Contains("Kofi Boateng", dispatch.TextBody, StringComparison.Ordinal);
+        Assert.Contains("0241112222", dispatch.TextBody, StringComparison.Ordinal);
         // Pay on delivery: the rider is collecting money, so the amount has to
         // be in the message the customer reads before answering the door.
         Assert.Contains(Money.Format(25_000), dispatch.TextBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ARefundEmailSaysHowMuchWentBackAndWhere()
+    {
+        var product = Product();
+        var order = Order(product);
+        var (service, _, mail) = BuildAdmin(product, order);
+
+        await service.UpdateOrderStatusAsync(order.Reference, new UpdateOrderStatusRequest("PAID"), default);
+        mail.Drain();
+
+        await service.RecordRefundAsync(
+            order.Reference,
+            new RecordRefundRequest(5_000, "MOBILE_MONEY", "Damaged bottle", "MM-778899"),
+            default);
+
+        var refund = Assert.Single(mail.DrainFor(Customer));
+        Assert.Contains(Money.Format(5_000), refund.Subject, StringComparison.Ordinal);
+        Assert.Contains("Mobile Money", refund.TextBody, StringComparison.Ordinal);
+        Assert.Contains("MM-778899", refund.TextBody, StringComparison.Ordinal);
+        Assert.Contains("partial refund", refund.TextBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -234,6 +264,7 @@ public class OrderNotificationTests
         var mail = new TestMail(shopInbox: ShopInbox);
         var service = new PaymentService(
             repository,
+            new FakeUnitOfWork(),
             gateway,
             mail.Notifier,
             NullLogger<PaymentService>.Instance);
