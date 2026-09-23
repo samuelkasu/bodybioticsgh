@@ -19,6 +19,12 @@ public static class AdminEndpoints
         group.MapGet("/orders/{reference}", GetOrderAsync).WithName("AdminGetOrder");
         group.MapPost("/orders/{reference}/status", UpdateOrderStatusAsync)
             .WithName("AdminUpdateOrderStatus");
+        group.MapPost("/orders/{reference}/dispatch", DispatchAsync).WithName("AdminDispatchOrder");
+        group.MapPost("/orders/{reference}/delivered", CompleteDeliveryAsync)
+            .WithName("AdminCompleteDelivery");
+        group.MapPost("/orders/{reference}/delivery-failed", FailDeliveryAsync)
+            .WithName("AdminFailDelivery");
+        group.MapPost("/orders/{reference}/refunds", RecordRefundAsync).WithName("AdminRecordRefund");
         group.MapGet("/products", ListProductsAsync).WithName("AdminListProducts");
         group.MapPatch("/products/{productId}", UpdateProductAsync)
             .WithName("AdminUpdateProduct");
@@ -71,6 +77,58 @@ public static class AdminEndpoints
         CancellationToken cancellationToken)
     {
         var order = await admin.UpdateOrderStatusAsync(reference, request, cancellationToken);
+
+        CacheHeaders.Private(httpContext.Response);
+        return ApiResults.Ok(order);
+    }
+
+    private static async Task<IResult> DispatchAsync(
+        string reference,
+        DispatchOrderRequest request,
+        HttpContext httpContext,
+        AdminService admin,
+        CancellationToken cancellationToken)
+    {
+        var order = await admin.DispatchAsync(reference, request, cancellationToken);
+
+        CacheHeaders.Private(httpContext.Response);
+        return ApiResults.Ok(order);
+    }
+
+    private static async Task<IResult> CompleteDeliveryAsync(
+        string reference,
+        CompleteDeliveryRequest request,
+        HttpContext httpContext,
+        AdminService admin,
+        CancellationToken cancellationToken)
+    {
+        var order = await admin.CompleteDeliveryAsync(reference, request, cancellationToken);
+
+        CacheHeaders.Private(httpContext.Response);
+        return ApiResults.Ok(order);
+    }
+
+    private static async Task<IResult> FailDeliveryAsync(
+        string reference,
+        FailDeliveryRequest request,
+        HttpContext httpContext,
+        AdminService admin,
+        CancellationToken cancellationToken)
+    {
+        var order = await admin.FailDeliveryAsync(reference, request, cancellationToken);
+
+        CacheHeaders.Private(httpContext.Response);
+        return ApiResults.Ok(order);
+    }
+
+    private static async Task<IResult> RecordRefundAsync(
+        string reference,
+        RecordRefundRequest request,
+        HttpContext httpContext,
+        AdminService admin,
+        CancellationToken cancellationToken)
+    {
+        var order = await admin.RecordRefundAsync(reference, request, cancellationToken);
 
         CacheHeaders.Private(httpContext.Response);
         return ApiResults.Ok(order);
