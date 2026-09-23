@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { DatePicker } from "@/components/ui/DatePicker";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui/Feedback";
-import { apiErrorMessage } from "@/lib/api/http";
+import { apiErrorMessage, isApiError } from "@/lib/api/http";
 import {
   useAdminProductsQuery,
   useAdminUpdateProductMutation,
@@ -112,6 +112,25 @@ export function ProductAdmin() {
   );
 }
 
+/** The current product a stale-stock refusal carries, when that is what the error is. */
+function conflictedProduct(error: unknown): AdminProduct | null {
+  const body =
+    typeof error === "object" && error !== null && "data" in error
+      ? (error as { data: unknown }).data
+      : error;
+
+  if (!isApiError(body) || body.error.code !== "CONFLICT") {
+    return null;
+  }
+
+  const details = body.error.details;
+  return typeof details === "object" &&
+    details !== null &&
+    typeof (details as { stock?: unknown }).stock === "number"
+    ? (details as AdminProduct)
+    : null;
+}
+
 /**
  * One editable row. Price is entered in cedis and converted here — staff think
  * in cedis, the API stores pesewas, and asking anyone to type 12500 for ₵125 is
@@ -130,14 +149,27 @@ function ProductRow({ product }: { product: AdminProduct }) {
   const [failure, setFailure] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saleOpen, setSaleOpen] = useState(product.salePriceMinor !== null);
+  // What the stock box started from. Held apart from `product`, which a
+  // background refetch can replace while the box still shows the old number.
+  const [loadedStock, setLoadedStock] = useState(product.stock);
 
   const save = async (patch: Omit<ProductPatch, "productId">) => {
     setFailure(null);
     setSaved(false);
     try {
-      await update({ productId: product.id, ...patch }).unwrap();
+      const updated = await update({ productId: product.id, ...patch }).unwrap();
+      if (patch.stock !== undefined) {
+        setLoadedStock(updated.stock);
+      }
       setSaved(true);
     } catch (error) {
+      // Orders moved the stock while the form was open. The API sends the
+      // current product back; showing it is what makes a second Save safe.
+      const current = conflictedProduct(error);
+      if (current) {
+        setStock(String(current.stock));
+        setLoadedStock(current.stock);
+      }
       setFailure(apiErrorMessage(error, "That change was not saved."));
     }
   };
@@ -153,8 +185,14 @@ function ProductRow({ product }: { product: AdminProduct }) {
 
     const patch: Omit<ProductPatch, "productId"> = {
       priceMinor: Math.round(cedis * 100),
-      stock: Math.round(units),
     };
+
+    // Sent only when changed: an untouched box resent as a number would
+    // overwrite whatever orders have done to the stock since it loaded.
+    if (Math.round(units) !== loadedStock) {
+      patch.stock = Math.round(units);
+      patch.expectedStock = loadedStock;
+    }
 
     const sale = salePrice.trim();
 
