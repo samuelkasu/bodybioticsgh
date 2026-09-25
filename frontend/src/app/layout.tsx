@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Crimson_Pro, Inter_Tight, Playfair_Display } from "next/font/google";
+import { Crimson_Pro, Inter_Tight, Jost, Playfair_Display } from "next/font/google";
 import localFont from "next/font/local";
 
 import { Splash } from "@/components/layout/Splash";
@@ -28,6 +28,17 @@ const interTight = Inter_Tight({
 const crimsonPro = Crimson_Pro({
   variable: "--font-crimson-pro",
   subsets: ["latin"],
+  display: "swap",
+});
+
+// The rest of the hero: the promise under the headline and the two button
+// labels. A geometric sans against the headline's high-contrast serif is the
+// pairing the design is built on, and it is the one thing on the page that
+// should not look like the Inter Tight the rest of the storefront runs on.
+const jost = Jost({
+  variable: "--font-hero-copy-face",
+  subsets: ["latin"],
+  weight: ["400"],
   display: "swap",
 });
 
@@ -206,7 +217,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en-GH"
-      className={`${cedi.variable} ${interTight.variable} ${crimsonPro.variable} ${playfair.variable} ${wahiyang.variable} h-full antialiased`}
+      className={`${cedi.variable} ${interTight.variable} ${crimsonPro.variable} ${playfair.variable} ${jost.variable} ${wahiyang.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
         <JsonLd data={ORGANISATION_JSON_LD} />
