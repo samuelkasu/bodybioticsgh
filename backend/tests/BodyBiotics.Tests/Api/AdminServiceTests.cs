@@ -4,6 +4,7 @@ using BodyBiotics.Api.Http;
 using BodyBiotics.Domain.Common;
 using BodyBiotics.Domain.Entities;
 using BodyBiotics.Tests.Fakes;
+using FluentValidation;
 
 namespace BodyBiotics.Tests.Api;
 
@@ -59,7 +60,11 @@ public class AdminServiceTests
             new TestMail().Notifier,
             new PricingService(new FakePromotionRepository()),
             new UpdateOrderStatusRequestValidator(),
-            new UpdateProductRequestValidator());
+            new UpdateProductRequestValidator(),
+            new DispatchOrderRequestValidator(),
+            new CompleteDeliveryRequestValidator(),
+            new FailDeliveryRequestValidator(),
+            new RecordRefundRequestValidator());
 
         return (service, repository);
     }
@@ -233,13 +238,65 @@ public class AdminServiceTests
 
         await service.UpdateProductAsync(
             "a",
-            new UpdateProductRequest(PriceMinor: null, Stock: 20, Active: null, null, null, null),
+            new UpdateProductRequest(PriceMinor: null, Stock: 20, Active: null, null, null, null, ExpectedStock: 8),
             default);
 
         Assert.Equal(20, product.Stock);
         // Untouched: a stale form must not revert a price someone else fixed.
         Assert.Equal(12_500, product.PriceMinor);
         Assert.True(product.Active);
+    }
+
+    [Fact]
+    public async Task AStaleStockEditIsRefusedRatherThanUndoingSales()
+    {
+        // The form loaded at 10; three sold since, so the row now holds 7.
+        var product = Product("a", 7);
+        var (service, _) = Build(product);
+
+        var refused = await Assert.ThrowsAsync<ApiException>(() =>
+            service.UpdateProductAsync(
+                "a",
+                new UpdateProductRequest(PriceMinor: 9_900, Stock: 12, Active: null, null, null, null, ExpectedStock: 10),
+                default));
+
+        Assert.Equal(ApiErrorCode.Conflict, refused.Code);
+        Assert.Contains("from 10 to 7", refused.Message, StringComparison.Ordinal);
+        // The current figures come back so the form can show them.
+        Assert.Equal(7, Assert.IsType<AdminProductDto>(refused.Details).Stock);
+        // All or nothing: the price in the same save is not applied either.
+        Assert.Equal(7, product.Stock);
+        Assert.Equal(12_500, product.PriceMinor);
+    }
+
+    [Fact]
+    public async Task AStockEditMustSayWhatStockItStartedFrom()
+    {
+        var product = Product("a", 8);
+        var (service, _) = Build(product);
+
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            service.UpdateProductAsync(
+                "a",
+                new UpdateProductRequest(PriceMinor: null, Stock: 20, Active: null, null, null, null),
+                default));
+
+        Assert.Equal(8, product.Stock);
+    }
+
+    [Fact]
+    public async Task APriceOnlyEditIsNotBlockedBySalesInTheMeantime()
+    {
+        var product = Product("a", 5);
+        var (service, _) = Build(product);
+
+        await service.UpdateProductAsync(
+            "a",
+            new UpdateProductRequest(PriceMinor: 9_900, Stock: null, Active: null, null, null, null),
+            default);
+
+        Assert.Equal(9_900, product.PriceMinor);
+        Assert.Equal(5, product.Stock);
     }
 
     [Fact]

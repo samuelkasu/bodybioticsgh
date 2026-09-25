@@ -56,6 +56,23 @@ jobs:
   backend:
     name: backend — build and test
     runs-on: ubuntu-latest
+    # For tests/BodyBiotics.Tests/Postgres: races, xmin and ON CONFLICT only
+    # exist in a real Postgres. Each test creates and drops its own database,
+    # so the user must be allowed to — the image's default superuser is.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bodybiotics
+          POSTGRES_PASSWORD: bodybiotics
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bodybiotics"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      BODYBIOTICS_TEST_POSTGRES: Host=localhost;Port=5432;Username=bodybiotics;Password=bodybiotics
     defaults:
       run:
         working-directory: backend

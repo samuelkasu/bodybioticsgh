@@ -19,16 +19,22 @@ public sealed class CartRepository(AppDbContext db) : ICartRepository
             return existing;
         }
 
-        var cart = new Cart
-        {
-            Id = Identifier.New(),
-            UserId = owner.UserId,
-            AnonId = owner.AnonId,
-        };
+        var now = DateTimeOffset.UtcNow;
 
-        db.Carts.Add(cart);
-        await db.SaveChangesAsync(cancellationToken);
-        return cart;
+        // Raw SQL for ON CONFLICT: two first adds racing both get here, and a
+        // plain INSERT would fail the loser on the unique index — which inside
+        // a transaction aborts it, with no way to recover and read the winner's
+        // row. DO NOTHING waits for the winner to commit, skips, and the read
+        // below then finds the one cart both requests share.
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO carts (id, user_id, anon_id, created_at, updated_at)
+            VALUES ({Identifier.New()}, {owner.UserId}, {owner.AnonId}, {now}, {now})
+            ON CONFLICT DO NOTHING
+            """,
+            cancellationToken);
+
+        return await Query(owner).FirstAsync(cancellationToken);
     }
 
     public void Remove(Cart cart) => db.Carts.Remove(cart);
@@ -100,6 +106,11 @@ public sealed class OrderRepository(AppDbContext db) : IOrderRepository
 
 public sealed class UnitOfWork(AppDbContext db) : IUnitOfWork
 {
+    // Retries after a concurrency conflict, on top of the first attempt. A
+    // conflict needs another writer inside the same few milliseconds, so three
+    // in a row means real contention and the caller is better off told.
+    private const int MaxConflictRetries = 3;
+
     public async Task<T> InTransactionAsync<T>(
         Func<CancellationToken, Task<T>> action,
         CancellationToken cancellationToken)
@@ -107,13 +118,37 @@ public sealed class UnitOfWork(AppDbContext db) : IUnitOfWork
         // The Npgsql retry strategy refuses ambient transactions unless the
         // whole block is executed through it, so use the execution strategy.
         var strategy = db.Database.CreateExecutionStrategy();
+        var rerun = false;
 
-        return await strategy.ExecuteAsync(async () =>
+        for (var conflicts = 0; ; conflicts++)
         {
-            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            var result = await action(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return result;
-        });
+            try
+            {
+                return await strategy.ExecuteAsync(async () =>
+                {
+                    // A rerun must start from what the database holds now. The
+                    // failed pass left its entities tracked, stale and modified:
+                    // reusing them would re-apply the old arithmetic, and its
+                    // added rows would be inserted a second time.
+                    if (rerun)
+                    {
+                        db.ChangeTracker.Clear();
+                    }
+
+                    rerun = true;
+
+                    await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+                    var result = await action(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return result;
+                });
+            }
+            catch (DbUpdateConcurrencyException) when (conflicts < MaxConflictRetries)
+            {
+                // Another transaction wrote a row this one read (stock, a
+                // coupon counter) and committed first. The rollback has
+                // already happened; go round again against the new values.
+            }
+        }
     }
 }

@@ -68,6 +68,13 @@ const cedi = localFont({
   display: "swap",
   // 1.2KB, on every page, and the first thing a price needs.
   preload: true,
+  // Without this, next/font/local also emits a metric-adjusted "cedi Fallback"
+  // and appends it to the family. That fallback is a system face with full
+  // coverage, and it sits second in --font-sans and --font-display, ahead of
+  // Inter Tight and Crimson Pro. It answers for every character on the site,
+  // so neither real face is ever fetched and the whole storefront renders in
+  // adjusted Arial. A one-glyph font has nothing to fall back to anyway.
+  adjustFontFallback: false,
 });
 
 export const metadata: Metadata = {

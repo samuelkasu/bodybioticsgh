@@ -1,38 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 
+import { OrderActions } from "@/components/admin/OrderActions";
 import { StatusBadge } from "@/components/admin/OrderQueue";
-import { Button } from "@/components/ui/Button";
 import { ErrorState, Skeleton } from "@/components/ui/Feedback";
 import { apiErrorMessage } from "@/lib/api/http";
-import {
-  useAdminOrderQuery,
-  useAdminUpdateOrderStatusMutation,
-} from "@/lib/features/admin/adminApi";
+import { useAdminOrderQuery } from "@/lib/features/admin/adminApi";
+import type { AdminOrder } from "@/lib/features/admin/adminApi";
 import { formatMoney } from "@/lib/utils/money";
 
-/**
- * What each status can become, mirroring Order.TryTransitionTo on the server.
- * Duplicated deliberately: the server is the authority and refuses anything
- * else, but offering a button that always fails is its own kind of bug.
- */
-const NEXT_STATUSES: Record<
-  string,
-  { value: string; label: string; danger?: boolean }[]
-> = {
-  PENDING: [
-    { value: "paid", label: "Mark paid" },
-    { value: "cancelled", label: "Cancel order", danger: true },
-  ],
-  PAID: [
-    { value: "fulfilled", label: "Mark delivered" },
-    { value: "refunded", label: "Refund", danger: true },
-  ],
-  FULFILLED: [{ value: "refunded", label: "Refund", danger: true }],
-  CANCELLED: [],
-  REFUNDED: [],
+const when = (iso: string) =>
+  new Date(iso).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" });
+
+const TRIP_STATUS: Record<string, string> = {
+  OUT_FOR_DELIVERY: "On the road",
+  DELIVERED: "Delivered",
+  FAILED: "Failed",
+};
+
+const REFUND_METHOD: Record<string, string> = {
+  MOBILE_MONEY: "Mobile Money",
+  CASH: "Cash",
+  HUBTEL: "Hubtel",
+  BANK_TRANSFER: "Bank transfer",
 };
 
 export function OrderDetail({ reference }: { reference: string }) {
@@ -43,8 +34,6 @@ export function OrderDetail({ reference }: { reference: string }) {
     error,
     refetch,
   } = useAdminOrderQuery(reference);
-  const [updateStatus, { isLoading: isUpdating }] = useAdminUpdateOrderStatusMutation();
-  const [failure, setFailure] = useState<string | null>(null);
 
   if (isError) {
     return (
@@ -63,17 +52,6 @@ export function OrderDetail({ reference }: { reference: string }) {
       </div>
     );
   }
-
-  const transitions = NEXT_STATUSES[order.status] ?? [];
-
-  const onTransition = async (status: string) => {
-    setFailure(null);
-    try {
-      await updateStatus({ reference, status }).unwrap();
-    } catch (caught) {
-      setFailure(apiErrorMessage(caught, "That change was refused."));
-    }
-  };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
@@ -127,6 +105,8 @@ export function OrderDetail({ reference }: { reference: string }) {
             {order.notes && <Row label="Notes" value={order.notes} />}
           </dl>
         </section>
+
+        <History order={order} />
 
         <section
           aria-labelledby="items"
@@ -199,50 +179,12 @@ export function OrderDetail({ reference }: { reference: string }) {
       </div>
 
       <aside className="border-card-line/70 h-fit rounded-xl border p-5">
-        <h3 className="font-display text-ink text-lg">Move this order on</h3>
+        <h3 className="font-display text-ink mb-4 text-lg">Move this order on</h3>
 
-        {transitions.length === 0 ? (
-          <p className="mt-2 text-sm text-neutral-600">
-            An order that is {order.status.toLowerCase()} is finished — there is nothing
-            further to do with it.
-          </p>
-        ) : (
-          <div className="mt-4 grid gap-2">
-            {transitions.map((transition) => (
-              <Button
-                key={transition.value}
-                variant={transition.danger ? "outline" : "primary"}
-                fullWidth
-                disabled={isUpdating}
-                onClick={() => void onTransition(transition.value)}
-              >
-                {transition.label}
-              </Button>
-            ))}
-          </div>
-        )}
-
-        {order.status === "PENDING" && (
-          <p className="mt-3 text-xs text-neutral-500">
-            Cancelling returns the reserved stock to the catalogue.
-          </p>
-        )}
-
-        {failure && (
-          <p
-            role="alert"
-            className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800"
-          >
-            {failure}
-          </p>
-        )}
+        <OrderActions order={order} />
 
         <p className="mt-5 text-xs text-neutral-500">
-          Last updated{" "}
-          {new Date(order.updatedAt).toLocaleString("en-GB", {
-            dateStyle: "short",
-            timeStyle: "short",
-          })}
+          Last updated {when(order.updatedAt)}
         </p>
       </aside>
     </div>
@@ -255,5 +197,82 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
       <dt className="w-20 shrink-0 text-neutral-500">{label}</dt>
       <dd className="text-ink">{value}</dd>
     </div>
+  );
+}
+
+/** Every trip and every refund, oldest first — what happened, not just where it ended. */
+function History({ order }: { order: AdminOrder }) {
+  if (order.deliveries.length === 0 && order.refunds.length === 0 && !order.paidAt) {
+    return null;
+  }
+
+  return (
+    <section
+      aria-labelledby="history"
+      className="border-card-line/70 rounded-xl border p-5"
+    >
+      <h3 id="history" className="font-display text-ink text-lg">
+        Delivery and payment
+      </h3>
+
+      <ul className="mt-3 grid gap-3 text-sm">
+        {order.paidAt && (
+          <li>
+            <span className="text-ink font-medium">
+              Paid {formatMoney(order.amountPaidMinor, order.currency)}
+            </span>
+            <span className="text-neutral-500"> — {when(order.paidAt)}</span>
+          </li>
+        )}
+
+        {order.deliveries.map((trip) => (
+          <li key={trip.id}>
+            <span className="text-ink font-medium">
+              {TRIP_STATUS[trip.status] ?? trip.status}
+            </span>{" "}
+            with {trip.riderName}
+            {trip.courierName && ` (${trip.courierName})`}, {trip.riderPhone}
+            <span className="text-neutral-500"> — sent {when(trip.dispatchedAt)}</span>
+            {trip.deliveredAt && (
+              <span className="text-neutral-500">
+                , delivered {when(trip.deliveredAt)}
+              </span>
+            )}
+            {trip.collectedMinor !== null && (
+              <span className="block text-neutral-600">
+                Collected {formatMoney(trip.collectedMinor, order.currency)} by{" "}
+                {trip.collectedVia === "mobilemoney" ? "Mobile Money" : "cash"}
+              </span>
+            )}
+            {trip.failureReason && (
+              <span className="block text-red-800">{trip.failureReason}</span>
+            )}
+            {trip.notes && <span className="block text-neutral-600">{trip.notes}</span>}
+          </li>
+        ))}
+
+        {order.refunds.map((refund) => (
+          <li key={refund.id}>
+            <span className="text-ink font-medium">
+              Refunded {formatMoney(refund.amountMinor, order.currency)}
+            </span>{" "}
+            by {REFUND_METHOD[refund.method] ?? refund.method}
+            {refund.reference && ` (${refund.reference})`}
+            <span className="text-neutral-500"> — {when(refund.createdAt)}</span>
+            <span className="block text-neutral-600">
+              {refund.reason}
+              {refund.restockedUnits > 0 && ` · ${refund.restockedUnits} back to stock`}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {order.refundedMinor > 0 && (
+        <p className="border-card-line/70 mt-3 border-t pt-2 text-sm text-neutral-600">
+          {formatMoney(order.refundedMinor, order.currency)} refunded of{" "}
+          {formatMoney(order.amountPaidMinor, order.currency)} paid.
+        </p>
+      )}
+    </section>
   );
 }

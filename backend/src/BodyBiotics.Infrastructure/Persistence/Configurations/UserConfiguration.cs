@@ -65,5 +65,10 @@ internal sealed class PasswordResetTokenConfiguration : IEntityTypeConfiguration
         // always found by its hash, never by user.
         builder.HasIndex(token => token.TokenHash).IsUnique();
         builder.HasIndex(token => token.ExpiresAt);
+
+        // Single use has to hold under concurrency too. Two requests carrying
+        // the same link both read UsedAt as null; the token makes the second
+        // one's write fail instead of setting a second password.
+        builder.Property<uint>("Version").IsRowVersion();
     }
 }

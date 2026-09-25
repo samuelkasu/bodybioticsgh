@@ -27,6 +27,7 @@ public class CartServiceTests
     private static CartService Build(FakeCartRepository carts, params Product[] products) =>
         new(carts,
             new FakeProductRepository(products),
+            new FakeUnitOfWork(),
             new PricingService(new FakePromotionRepository()),
             new AddToCartRequestValidator(),
             new UpdateCartLineRequestValidator(),

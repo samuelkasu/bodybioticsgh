@@ -16,6 +16,7 @@ namespace BodyBiotics.Api.Features.Payments;
 /// </summary>
 public sealed partial class PaymentService(
     IAdminRepository orders,
+    IUnitOfWork unitOfWork,
     IPaymentGateway gateway,
     OrderNotifier notifications,
     ILogger<PaymentService> logger)
@@ -61,28 +62,10 @@ public sealed partial class PaymentService(
                     return order.Status;
                 }
 
-                if (order.TryTransitionTo(OrderStatus.Paid))
-                {
-                    order.PaidAt = DateTimeOffset.UtcNow;
-                    order.PaymentChannel = status.Channel;
-
-                    if (!string.IsNullOrWhiteSpace(status.ProviderTransactionId))
-                    {
-                        order.PaymentReference = status.ProviderTransactionId;
-                    }
-
-                    await orders.SaveChangesAsync(cancellationToken);
-                    // Inside the guard, so the callback and the order page
-                    // both reconciling does not send two receipts.
-                    notifications.Paid(order);
-                    LogPaid(logger, reference);
-                }
-
-                break;
+                return await SettleAsync(reference, status, cancellationToken);
 
             case PaymentState.Failed:
-                await CancelAndReleaseAsync(order, cancellationToken);
-                break;
+                return await SettleAsync(reference, status, cancellationToken);
 
             case PaymentState.Pending:
             case PaymentState.Unknown:
@@ -90,31 +73,79 @@ public sealed partial class PaymentService(
                 // Left alone on purpose. A customer who is still on Hubtel's
                 // page, or a reference the provider has not registered yet,
                 // must not have their order cancelled out from under them.
-                break;
+                return order.Status;
         }
-
-        return order.Status;
     }
 
     /// <summary>
-    /// A failed payment gives the stock back, exactly as an admin cancellation
-    /// does — checkout took it when the order was placed.
+    /// Writes the provider's verdict. The callback and the order page often
+    /// reconcile the same payment at the same moment, and a failed payment
+    /// releases stock another checkout may be taking, so this goes through the
+    /// unit of work: losing either race reruns it against the fresh rows rather
+    /// than failing. The gateway is not asked again — its answer does not change
+    /// because a write here lost a race.
     /// </summary>
-    private async Task CancelAndReleaseAsync(Order order, CancellationToken cancellationToken)
+    private async Task<OrderStatus> SettleAsync(
+        string reference,
+        PaymentStatus status,
+        CancellationToken cancellationToken)
     {
-        if (!order.TryTransitionTo(OrderStatus.Cancelled))
+        var (order, settled) = await unitOfWork.InTransactionAsync(
+            async token =>
+            {
+                // Reloaded: a rerun starts with nothing tracked, and whoever
+                // beat the last attempt may have settled the order already.
+                var order = await orders.FindOrderAsync(reference, token)
+                    ?? throw new ApiException(ApiErrorCode.NotFound, "No such order");
+
+                if (order.Status != OrderStatus.Pending)
+                {
+                    return (order, false);
+                }
+
+                if (status.State == PaymentState.Paid)
+                {
+                    order.TryTransitionTo(OrderStatus.Paid);
+                    order.RecordPayment(status.AmountMinor, DateTimeOffset.UtcNow);
+                    order.PaymentChannel = status.Channel;
+
+                    if (!string.IsNullOrWhiteSpace(status.ProviderTransactionId))
+                    {
+                        order.PaymentReference = status.ProviderTransactionId;
+                    }
+                }
+                else
+                {
+                    // A failed payment gives the stock back, exactly as an
+                    // admin cancellation does — checkout took it when the
+                    // order was placed.
+                    order.TryTransitionTo(OrderStatus.Cancelled);
+
+                    foreach (var item in order.Items)
+                    {
+                        item.Product?.Release(item.Quantity);
+                    }
+                }
+
+                await orders.SaveChangesAsync(token);
+                return (order, true);
+            },
+            cancellationToken);
+
+        // Only for the attempt that actually moved the order, so the callback
+        // and the order page both reconciling does not send two emails.
+        if (settled && order.Status == OrderStatus.Paid)
         {
-            return;
+            notifications.Paid(order);
+            LogPaid(logger, reference);
+        }
+        else if (settled)
+        {
+            notifications.Cancelled(order);
+            LogFailed(logger, reference);
         }
 
-        foreach (var item in order.Items)
-        {
-            item.Product?.Release(item.Quantity);
-        }
-
-        await orders.SaveChangesAsync(cancellationToken);
-        notifications.Cancelled(order);
-        LogFailed(logger, order.Reference);
+        return order.Status;
     }
 
     [LoggerMessage(

@@ -4,6 +4,7 @@ using BodyBiotics.Domain.Abstractions;
 using BodyBiotics.Domain.Common;
 using BodyBiotics.Domain.Entities;
 using FluentValidation;
+using Microsoft.EntityFrameworkCore;
 
 namespace BodyBiotics.Api.Features.Cart;
 
@@ -18,10 +19,16 @@ using CartEntity = Domain.Entities.Cart;
 /// worked out by the same engine checkout charges with, so what the customer
 /// agrees to and what the till takes cannot disagree — but they are still only
 /// a display: checkout prices again from the catalogue and never trusts these.
+///
+/// Every change runs through the unit of work. A double-tapped "add" or two
+/// tabs editing one basket race on the same cart row, and its concurrency
+/// token turns the loser's write into a rerun against the fresh basket rather
+/// than a quantity silently lost. Each action therefore loads what it changes.
 /// </summary>
 public sealed class CartService(
     ICartRepository carts,
     IProductRepository products,
+    IUnitOfWork unitOfWork,
     PricingService pricing,
     IValidator<AddToCartRequest> addValidator,
     IValidator<UpdateCartLineRequest> updateValidator,
@@ -40,44 +47,50 @@ public sealed class CartService(
     {
         await addValidator.ValidateAndThrowAsync(request, cancellationToken);
 
-        var found = await products.FindByIdsAsync([request.ProductId], cancellationToken);
-        var product = found.Count > 0
-            ? found[0]
-            : throw new ApiException(ApiErrorCode.NotFound, "That product does not exist");
-
-        if (!product.Active)
-        {
-            throw new ApiException(ApiErrorCode.Conflict, "That product is not available");
-        }
-
-        // Refuse here rather than at checkout: filling a cart with items that
-        // cannot be bought wastes the customer's time and their data.
-        if (!product.InStock)
-        {
-            throw new ApiException(ApiErrorCode.Conflict, $"{product.Name} is out of stock");
-        }
-
-        var cart = await carts.GetOrCreateAsync(owner, cancellationToken);
-        var line = cart.Items.FirstOrDefault(item => item.ProductId == product.Id);
-
-        if (line is null)
-        {
-            cart.Items.Add(new CartItem
+        var cart = await unitOfWork.InTransactionAsync(
+            async token =>
             {
-                Id = Identifier.New(),
-                CartId = cart.Id,
-                ProductId = product.Id,
-                Product = product,
-                Quantity = CartItem.ClampQuantity(request.Quantity),
-            });
-        }
-        else
-        {
-            line.Quantity = CartItem.ClampQuantity(line.Quantity + request.Quantity);
-        }
+                var found = await products.FindByIdsAsync([request.ProductId], token);
+                var product = found.Count > 0
+                    ? found[0]
+                    : throw new ApiException(ApiErrorCode.NotFound, "That product does not exist");
 
-        cart.UpdatedAt = DateTimeOffset.UtcNow;
-        await carts.SaveChangesAsync(cancellationToken);
+                if (!product.Active)
+                {
+                    throw new ApiException(ApiErrorCode.Conflict, "That product is not available");
+                }
+
+                // Refuse here rather than at checkout: filling a cart with items
+                // that cannot be bought wastes the customer's time and their data.
+                if (!product.InStock)
+                {
+                    throw new ApiException(ApiErrorCode.Conflict, $"{product.Name} is out of stock");
+                }
+
+                var cart = await carts.GetOrCreateAsync(owner, token);
+                var line = cart.Items.FirstOrDefault(item => item.ProductId == product.Id);
+
+                if (line is null)
+                {
+                    cart.Items.Add(new CartItem
+                    {
+                        Id = Identifier.New(),
+                        CartId = cart.Id,
+                        ProductId = product.Id,
+                        Product = product,
+                        Quantity = CartItem.ClampQuantity(request.Quantity),
+                    });
+                }
+                else
+                {
+                    line.Quantity = CartItem.ClampQuantity(line.Quantity + request.Quantity);
+                }
+
+                cart.UpdatedAt = DateTimeOffset.UtcNow;
+                await carts.SaveChangesAsync(token);
+                return cart;
+            },
+            cancellationToken);
 
         return await ToDtoAsync(cart, cancellationToken);
     }
@@ -89,50 +102,57 @@ public sealed class CartService(
     {
         await updateValidator.ValidateAndThrowAsync(request, cancellationToken);
 
-        var cart = await carts.FindAsync(owner, cancellationToken);
-        if (cart is null)
-        {
-            return Empty();
-        }
+        var cart = await unitOfWork.InTransactionAsync(
+            async token =>
+            {
+                var cart = await carts.FindAsync(owner, token);
+                var line = cart?.Items.FirstOrDefault(item => item.ProductId == request.ProductId);
+                if (cart is null || line is null)
+                {
+                    return cart;
+                }
 
-        var line = cart.Items.FirstOrDefault(item => item.ProductId == request.ProductId);
-        if (line is null)
-        {
-            return await ToDtoAsync(cart, cancellationToken);
-        }
+                var quantity = CartItem.ClampQuantity(request.Quantity);
 
-        var quantity = CartItem.ClampQuantity(request.Quantity);
+                if (quantity == 0)
+                {
+                    cart.Items.Remove(line);
+                }
+                else
+                {
+                    line.Quantity = quantity;
+                }
 
-        if (quantity == 0)
-        {
-            cart.Items.Remove(line);
-        }
-        else
-        {
-            line.Quantity = quantity;
-        }
+                cart.UpdatedAt = DateTimeOffset.UtcNow;
+                await carts.SaveChangesAsync(token);
+                return cart;
+            },
+            cancellationToken);
 
-        cart.UpdatedAt = DateTimeOffset.UtcNow;
-        await carts.SaveChangesAsync(cancellationToken);
-
-        return await ToDtoAsync(cart, cancellationToken);
+        return cart is null ? Empty() : await ToDtoAsync(cart, cancellationToken);
     }
 
     public async Task<CartDto> ClearAsync(CartOwner owner, CancellationToken cancellationToken)
     {
-        var cart = await carts.FindAsync(owner, cancellationToken);
-        if (cart is null)
-        {
-            return Empty();
-        }
+        await unitOfWork.InTransactionAsync(
+            async token =>
+            {
+                var cart = await carts.FindAsync(owner, token);
+                if (cart is null)
+                {
+                    return false;
+                }
 
-        cart.Items.Clear();
-        // The code goes with the basket it was applied to. Leaving it attached
-        // to an empty cart means the next thing added silently arrives
-        // discounted, which is not what "remove everything" means.
-        cart.CouponCode = null;
-        cart.UpdatedAt = DateTimeOffset.UtcNow;
-        await carts.SaveChangesAsync(cancellationToken);
+                cart.Items.Clear();
+                // The code goes with the basket it was applied to. Leaving it
+                // attached to an empty cart means the next thing added silently
+                // arrives discounted, which is not what "remove everything" means.
+                cart.CouponCode = null;
+                cart.UpdatedAt = DateTimeOffset.UtcNow;
+                await carts.SaveChangesAsync(token);
+                return true;
+            },
+            cancellationToken);
 
         return Empty();
     }
@@ -150,34 +170,42 @@ public sealed class CartService(
     {
         await couponValidator.ValidateAndThrowAsync(request, cancellationToken);
 
-        var cart = await carts.FindAsync(owner, cancellationToken);
-        if (cart is null || cart.Items.Count == 0)
-        {
-            throw new ApiException(
-                ApiErrorCode.BadRequest,
-                "Add something to your basket before applying a code.");
-        }
-
         var code = Coupon.Normalise(request.Code);
         var now = DateTimeOffset.UtcNow;
 
-        var priced = await pricing.PriceAsync(
-            Lines(cart, now),
-            code,
-            email: null,
-            now,
+        // Priced inside the transaction, so a rerun checks the code against the
+        // basket as it now is, not as the losing attempt saw it.
+        var (cart, priced) = await unitOfWork.InTransactionAsync(
+            async token =>
+            {
+                var cart = await carts.FindAsync(owner, token);
+                if (cart is null || cart.Items.Count == 0)
+                {
+                    throw new ApiException(
+                        ApiErrorCode.BadRequest,
+                        "Add something to your basket before applying a code.");
+                }
+
+                var priced = await pricing.PriceAsync(
+                    Lines(cart, now),
+                    code,
+                    email: null,
+                    now,
+                    token);
+
+                if (priced.CouponRejected)
+                {
+                    throw new ApiException(
+                        ApiErrorCode.Conflict,
+                        PricingService.Explain(priced.Pricing.CouponRejection, priced.Coupon));
+                }
+
+                cart.CouponCode = code;
+                cart.UpdatedAt = now;
+                await carts.SaveChangesAsync(token);
+                return (cart, priced);
+            },
             cancellationToken);
-
-        if (priced.CouponRejected)
-        {
-            throw new ApiException(
-                ApiErrorCode.Conflict,
-                PricingService.Explain(priced.Pricing.CouponRejection, priced.Coupon));
-        }
-
-        cart.CouponCode = code;
-        cart.UpdatedAt = now;
-        await carts.SaveChangesAsync(cancellationToken);
 
         return ToDto(cart, priced, now);
     }
@@ -186,17 +214,23 @@ public sealed class CartService(
         CartOwner owner,
         CancellationToken cancellationToken)
     {
-        var cart = await carts.FindAsync(owner, cancellationToken);
-        if (cart is null)
-        {
-            return Empty();
-        }
+        var cart = await unitOfWork.InTransactionAsync(
+            async token =>
+            {
+                var cart = await carts.FindAsync(owner, token);
+                if (cart is null)
+                {
+                    return null;
+                }
 
-        cart.CouponCode = null;
-        cart.UpdatedAt = DateTimeOffset.UtcNow;
-        await carts.SaveChangesAsync(cancellationToken);
+                cart.CouponCode = null;
+                cart.UpdatedAt = DateTimeOffset.UtcNow;
+                await carts.SaveChangesAsync(token);
+                return cart;
+            },
+            cancellationToken);
 
-        return await ToDtoAsync(cart, cancellationToken);
+        return cart is null ? Empty() : await ToDtoAsync(cart, cancellationToken);
     }
 
     /// <summary>
@@ -204,7 +238,16 @@ public sealed class CartService(
     /// Quantities are summed and re-clamped, so adding the same product from
     /// two devices cannot exceed the per-line cap.
     /// </summary>
-    public async Task MergeAsync(string anonId, string userId, CancellationToken cancellationToken)
+    public Task MergeAsync(string anonId, string userId, CancellationToken cancellationToken) =>
+        unitOfWork.InTransactionAsync(
+            async token =>
+            {
+                await MergeOnceAsync(anonId, userId, token);
+                return true;
+            },
+            cancellationToken);
+
+    private async Task MergeOnceAsync(string anonId, string userId, CancellationToken cancellationToken)
     {
         var anonymous = await carts.FindAsync(CartOwner.ForAnonymous(anonId), cancellationToken);
         if (anonymous is null || anonymous.Items.Count == 0)
@@ -282,7 +325,18 @@ public sealed class CartService(
         if (cart.CouponCode is not null && priced.CouponRejected)
         {
             cart.CouponCode = null;
-            await carts.SaveChangesAsync(cancellationToken);
+
+            try
+            {
+                await carts.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Tidying only, and it runs on every read: two tabs loading the
+                // basket at once both try it. The loser has nothing to redo —
+                // the other request changed the cart, and checkout refuses a
+                // dead code regardless. Failing a read over it would be worse.
+            }
         }
 
         return ToDto(cart, priced, now);

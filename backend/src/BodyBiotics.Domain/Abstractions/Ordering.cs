@@ -55,6 +55,11 @@ public interface IOrderRepository
 /// <summary>
 /// Wraps the checkout write path in a single database transaction: reserving
 /// stock and writing the order must both happen, or neither.
+///
+/// The action may run more than once. When another transaction changes a row
+/// it read (stock, a coupon counter) the attempt is rolled back and rerun with
+/// every tracked entity discarded, so the action must load what it changes
+/// itself rather than close over entities loaded before the call.
 /// </summary>
 public interface IUnitOfWork
 {

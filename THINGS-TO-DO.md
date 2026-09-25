@@ -45,6 +45,19 @@ Then, genuinely blocking:
 
 Not blocking: automatic stock expiry, Play Store listing, analytics, CDN, Redis rate limiting (that one only matters past one instance). Hubtel is built but switched off until credentials are set — the shop falls back to pay on delivery on its own.
 
+### Done since (2026-09-22) — the Lighthouse job
+
+The budgets job had been red for five commits. It was never flaky: two real bugs, both found by measurement against a production build with the real API rather than by reading the config.
+
+- **CLS 0.878 → 0.006** on `/` and `/shop`. The `<footer>` was 86% of it, from two separate shifts:
+  - A real product card is 370px, its skeleton was 354px. The grid stretches every card in a row to the tallest, and a card carrying "Only 3 left" under the price is a caption line taller than one without — so a row's height depended on which products happened to land in it, and no fixed skeleton could ever match. `ProductCard` and `ProductCardSkeleton` now share `.product-card-body`, which holds the body open to its tallest case, so the two match by construction rather than by a pixel count someone has to keep in step. Over 12 rows the old mismatch dropped the footer 335px the moment the listing hydrated. Note that `ProductListingFallback` had already been fixed once for the same class of bug (a single `h-96` block, 0.17 of the then-0.19 CLS) — this was the residue.
+  - `<Pagination>` gets `totalPages` from the response, so it rendered nothing until the data landed and then 141px of page links appeared under the grid. Reserved during loading with `.product-pager-hold`, the same trick the results count already used with `min-h-5`.
+- **Font payload 218KB → 119KB.** Every price reads "GH₵", and ₵ is U+20B5 — which Google's slicing puts in Inter Tight's `latin-ext` subset, not `latin`. That one glyph was pulling an 89,820-byte font on every page, and unpreloaded, so it was discovered late and delayed everything queued behind it. Replaced with the same subset cut to the single codepoint (1,196 bytes), listed ahead of Inter Tight in `--font-sans` so every other character falls through untouched. Wahiyang also still shipped as a raw 78KB `.ttf`; it is woff2 at 24KB now.
+- **The reports were never being uploaded.** `actions/upload-artifact@v4` excludes dotfiles by default, so `frontend/.lighthouseci/` uploaded nothing and every failed run left no evidence behind — which is why the previous five attempts were guesswork. `include-hidden-files: true` fixes it; the nine HTML reports are on the run page now.
+- **Ruled out: the splash.** Several of those earlier commits were aimed at it. Building with it disabled made LCP *worse* before the font fix (8.1s) and made no measurable difference after. It is not the problem.
+
+What is left is in §3: the listing renders in the browser, and until it does not, performance sits around 0.45.
+
 ### Done so far (2026-09-17)
 
 - §1.4, §1.5, §4.5.1, §4.5.3 — the order-code cleanup.
@@ -57,7 +70,7 @@ Not blocking: automatic stock expiry, Play Store listing, analytics, CDN, Redis 
 - §2.2 **email** and §2.3 **password reset**, both end to end. Off until SMTP credentials are set, and everything degrades cleanly without them.
 - **Delivery details are now stored on the order.** They were collected, validated and thrown away — an order that arrived could not be delivered or even phoned about. See §5.
 
-Backend: 157 tests pass. Frontend: 111 unit tests, 5 PWA e2e on a production build, lint and types clean. CI's `format:check` is red on two files that predate this work (`scripts/import-catalog.ts`, `src/components/ui/Feedback.tsx`) — `npm run format` clears it.
+Backend: 157 tests pass. Frontend: 193 unit tests across 26 suites, 5 PWA e2e on a production build, lint and types clean. `format:check` is clean too as of 2026-09-22 — it is the first step of the frontend job and fails the build on whitespace alone, so run `npm run format` before pushing rather than finding out from CI.
 
 **Blocked on a decision, not on work:** §1.3 delivery pricing (needs the actual fees), §2.4 review photo storage (needs a bucket), §4.5.4 EXIF stripping (imaging library licence).
 
@@ -199,7 +212,8 @@ Checkout decrements stock. Nothing ever gives it back, because nothing cancels a
 - [ ] **Error tracking.** A failed checkout in Accra is currently invisible.
 - [ ] **Metrics and a log sink.** Structured logs already exist; nothing collects them.
 - [ ] **Image CDN.** ~17MB of catalogue WebP is served off the Next box.
-- [x] **Lighthouse budgets in CI** — DONE 2026-09-17. `frontend/lighthouserc.json` plus a `lighthouse` job that runs against Postgres and the real API, because a score measured on an empty catalogue is meaningless. Three runs per URL, asserted on the median: one run on a shared CI box is too noisy to gate on. Gates performance ≥ 0.75, accessibility and SEO ≥ 0.9, LCP ≤ 4s, CLS ≤ 0.1, total transfer ≤ 2.5MB. **The thresholds are a starting point** — Docker was not available here to run the suite against a live API, so tune them from the first real CI run rather than trusting these numbers.
+- [x] **Lighthouse budgets in CI** — DONE 2026-09-17, tuned against real numbers 2026-09-22. `frontend/lighthouserc.json` plus a `lighthouse` job that runs against Postgres and the real API, because a score measured on an empty catalogue is meaningless. Three runs per URL, asserted on the median: one run on a shared CI box is too noisy to gate on. Accessibility and SEO ≥ 0.9, CLS ≤ 0.1 and total transfer ≤ 2.5MB still fail the build. Performance ≥ 0.75 and LCP ≤ 4s now **warn** — see the entry below for why and what it would take to turn them back.
+- [ ] **Server-render the shop listing.** This is the whole of the remaining performance gap. `/shop`, `/category/*`, `/brand/*` and `/product-tag/*` all render through `ProductListing`, which is client-only because `useShopQuery` reads `useSearchParams` — so the server sends a skeleton and the browser builds 24 cards itself. Measured at 1400kbps and 4x CPU against the real API: **0.41 on `/`, 0.41-0.45 on `/shop`**, against the 0.75 target, with LCP at 5.6-7.4s against 4s. LCP is not network-bound — the hero image downloads in 320ms — it is ~4.3s of render delay sitting behind ~3.1s of script bootup and 231KB of JavaScript. No amount of threshold tuning reaches 0.75; the listing has to move to the server. The thresholds are left at the real target so the warnings keep reporting the gap, and `.github/workflows/ci.yml` carries the same note next to the `lhci autorun` step. Turn both back to `error` once this lands.
 - [x] **Error pages** — DONE 2026-09-17. `not-found.tsx` (routes back into the catalogue rather than apologising — most 404s here will be dead WooCommerce URLs), `error.tsx` (keeps the shell, offers a retry, prints the digest so support has something searchable) and `global-error.tsx` (inline styles only: when the root layout fails, the stylesheet and fonts are gone by definition).
 
 ---
@@ -295,6 +309,7 @@ Plus the two order bugs in §1.4 and §1.5, which are security issues as much as
 - [x] **Fixed 2026-09-17: `apiErrorMessage` never saw the API's message.** RTK Query wraps the response as `{ status, data }`, one level deeper than the check looked, so every caller in the app silently fell back to its generic text — "We could not place your order" instead of "Glow Serum does not have 3 left in stock".
 - [x] Sign-in now invalidates the wishlist cache, which the API merges onto the account during login.
 - [ ] Smoke-test a real iPhone before release. WebKit in Playwright is a regression net, not an iOS device — no home-screen install, different storage eviction.
+- [ ] **The footer logo loads at `w=1200`** — 24KB for a box that is never drawn wider than 300px. Spotted 2026-09-22 while reading the Lighthouse network waterfall. Same class of mistake as the splash mark's missing `sizes`, which is already fixed; this one needs the real box named the same way.
 
 ---
 

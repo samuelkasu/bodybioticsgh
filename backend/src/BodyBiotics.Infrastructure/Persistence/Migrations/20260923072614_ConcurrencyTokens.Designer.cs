@@ -3,6 +3,7 @@ using System;
 using BodyBiotics.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BodyBiotics.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260923072614_ConcurrencyTokens")]
+    partial class ConcurrencyTokens
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -95,7 +98,6 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_carts_anon_id");
 
                     b.HasIndex("UserId")
-                        .IsUnique()
                         .HasDatabaseName("ix_carts_user_id");
 
                     b.ToTable("carts", (string)null);
@@ -335,96 +337,6 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
                     b.ToTable("coupon_redemptions", (string)null);
                 });
 
-            modelBuilder.Entity("BodyBiotics.Domain.Entities.Delivery", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("id");
-
-                    b.Property<int?>("CollectedMinor")
-                        .HasColumnType("integer")
-                        .HasColumnName("collected_minor");
-
-                    b.Property<string>("CollectedVia")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("collected_via");
-
-                    b.Property<string>("CourierName")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)")
-                        .HasColumnName("courier_name");
-
-                    b.Property<DateTimeOffset?>("DeliveredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("delivered_at");
-
-                    b.Property<DateTimeOffset>("DispatchedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("dispatched_at");
-
-                    b.Property<DateTimeOffset?>("FailedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("failed_at");
-
-                    b.Property<string>("FailureReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("failure_reason");
-
-                    b.Property<string>("Method")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasColumnName("method");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("notes");
-
-                    b.Property<string>("OrderId")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("order_id");
-
-                    b.Property<string>("RiderName")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)")
-                        .HasColumnName("rider_name");
-
-                    b.Property<string>("RiderPhone")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("rider_phone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasColumnName("status");
-
-                    b.HasKey("Id")
-                        .HasName("pk_deliveries");
-
-                    b.HasIndex(new[] { "OrderId" }, "ix_deliveries_order_id")
-                        .HasDatabaseName("ix_deliveries_order_id");
-
-                    b.HasIndex(new[] { "OrderId" }, "ix_deliveries_order_id_out_for_delivery")
-                        .IsUnique()
-                        .HasDatabaseName("ix_deliveries_order_id_out_for_delivery")
-                        .HasFilter("\"status\" = 'OutForDelivery'");
-
-                    b.ToTable("deliveries", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_delivery_collected_positive", "\"collected_minor\" IS NULL OR \"collected_minor\" > 0");
-                        });
-                });
-
             modelBuilder.Entity("BodyBiotics.Domain.Entities.Order", b =>
                 {
                     b.Property<string>("Id")
@@ -437,10 +349,6 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("address_line");
-
-                    b.Property<int>("AmountPaidMinor")
-                        .HasColumnType("integer")
-                        .HasColumnName("amount_paid_minor");
 
                     b.Property<string>("City")
                         .IsRequired()
@@ -542,10 +450,6 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("reference");
 
-                    b.Property<int>("RefundedMinor")
-                        .HasColumnType("integer")
-                        .HasColumnName("refunded_minor");
-
                     b.Property<string>("RequestId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
@@ -600,12 +504,7 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId", "CreatedAt")
                         .HasDatabaseName("ix_orders_user_id_created_at");
 
-                    b.ToTable("orders", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_order_amount_paid_non_negative", "\"amount_paid_minor\" >= 0");
-
-                            t.HasCheckConstraint("ck_order_refunded_within_paid", "\"refunded_minor\" BETWEEN 0 AND \"amount_paid_minor\"");
-                        });
+                    b.ToTable("orders", (string)null);
                 });
 
             modelBuilder.Entity("BodyBiotics.Domain.Entities.OrderItem", b =>
@@ -639,10 +538,6 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("quantity");
 
-                    b.Property<int>("RestockedQuantity")
-                        .HasColumnType("integer")
-                        .HasColumnName("restocked_quantity");
-
                     b.Property<int>("UnitPriceMinor")
                         .HasColumnType("integer")
                         .HasColumnName("unit_price_minor");
@@ -656,10 +551,7 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
                     b.HasIndex("ProductId")
                         .HasDatabaseName("ix_order_items_product_id");
 
-                    b.ToTable("order_items", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_order_item_restocked_within_quantity", "\"restocked_quantity\" BETWEEN 0 AND \"quantity\"");
-                        });
+                    b.ToTable("order_items", (string)null);
                 });
 
             modelBuilder.Entity("BodyBiotics.Domain.Entities.PasswordResetToken", b =>
@@ -1103,62 +995,6 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("BodyBiotics.Domain.Entities.Refund", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("id");
-
-                    b.Property<int>("AmountMinor")
-                        .HasColumnType("integer")
-                        .HasColumnName("amount_minor");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("Method")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasColumnName("method");
-
-                    b.Property<string>("OrderId")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("order_id");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("reason");
-
-                    b.Property<string>("Reference")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("reference");
-
-                    b.Property<int>("RestockedUnits")
-                        .HasColumnType("integer")
-                        .HasColumnName("restocked_units");
-
-                    b.HasKey("Id")
-                        .HasName("pk_refunds");
-
-                    b.HasIndex("OrderId")
-                        .HasDatabaseName("ix_refunds_order_id");
-
-                    b.ToTable("refunds", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_refund_amount_positive", "\"amount_minor\" > 0");
-
-                            t.HasCheckConstraint("ck_refund_restocked_non_negative", "\"restocked_units\" >= 0");
-                        });
-                });
-
             modelBuilder.Entity("BodyBiotics.Domain.Entities.Session", b =>
                 {
                     b.Property<string>("Id")
@@ -1362,18 +1198,6 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
                     b.Navigation("Order");
                 });
 
-            modelBuilder.Entity("BodyBiotics.Domain.Entities.Delivery", b =>
-                {
-                    b.HasOne("BodyBiotics.Domain.Entities.Order", "Order")
-                        .WithMany("Deliveries")
-                        .HasForeignKey("OrderId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_deliveries_orders_order_id");
-
-                    b.Navigation("Order");
-                });
-
             modelBuilder.Entity("BodyBiotics.Domain.Entities.Order", b =>
                 {
                     b.HasOne("BodyBiotics.Domain.Entities.User", "User")
@@ -1470,18 +1294,6 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("BodyBiotics.Domain.Entities.Refund", b =>
-                {
-                    b.HasOne("BodyBiotics.Domain.Entities.Order", "Order")
-                        .WithMany("Refunds")
-                        .HasForeignKey("OrderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_refunds_orders_order_id");
-
-                    b.Navigation("Order");
-                });
-
             modelBuilder.Entity("BodyBiotics.Domain.Entities.Session", b =>
                 {
                     b.HasOne("BodyBiotics.Domain.Entities.User", "User")
@@ -1536,11 +1348,7 @@ namespace BodyBiotics.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("BodyBiotics.Domain.Entities.Order", b =>
                 {
-                    b.Navigation("Deliveries");
-
                     b.Navigation("Items");
-
-                    b.Navigation("Refunds");
                 });
 
             modelBuilder.Entity("BodyBiotics.Domain.Entities.Product", b =>

@@ -58,7 +58,7 @@ public class PaymentServiceTests
         repository.Orders.Add(order);
 
         var gateway = new FakePaymentGateway();
-        var service = new PaymentService(repository, gateway, new TestMail().Notifier, NullLogger<PaymentService>.Instance);
+        var service = new PaymentService(repository, new FakeUnitOfWork(), gateway, new TestMail().Notifier, NullLogger<PaymentService>.Instance);
 
         return (service, repository, gateway, order, product);
     }

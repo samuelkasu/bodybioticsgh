@@ -30,7 +30,16 @@ public sealed record AdminOrderDto(
     int ItemCount,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    IReadOnlyList<AdminOrderLineDto> Lines);
+    IReadOnlyList<AdminOrderLineDto> Lines,
+    /// <summary>"ON_DELIVERY" or "HUBTEL": whether the rider collects money.</summary>
+    string PaymentMethod,
+    DateTimeOffset? PaidAt,
+    /// <summary>What was actually received — the ceiling on refunds.</summary>
+    int AmountPaidMinor,
+    int RefundedMinor,
+    int RefundableMinor,
+    IReadOnlyList<AdminDeliveryDto> Deliveries,
+    IReadOnlyList<AdminRefundDto> Refunds);
 
 public sealed record AdminOrderLineDto(
     string ProductId,
@@ -40,7 +49,131 @@ public sealed record AdminOrderLineDto(
     int Quantity,
     int LineTotalMinor,
     /// <summary>This line's share of the discount, for working out a partial refund.</summary>
-    int DiscountMinor);
+    int DiscountMinor,
+    /// <summary>Units refunds have already put back on sale; the rest can still go back.</summary>
+    int RestockedQuantity);
+
+public sealed record AdminDeliveryDto(
+    string Id,
+    string Method,
+    string? CourierName,
+    string RiderName,
+    string RiderPhone,
+    string? Notes,
+    string Status,
+    DateTimeOffset DispatchedAt,
+    DateTimeOffset? DeliveredAt,
+    DateTimeOffset? FailedAt,
+    string? FailureReason,
+    int? CollectedMinor,
+    string? CollectedVia);
+
+public sealed record AdminRefundDto(
+    string Id,
+    int AmountMinor,
+    string Method,
+    string Reason,
+    string? Reference,
+    int RestockedUnits,
+    DateTimeOffset CreatedAt);
+
+/// <summary>Sends an order out. Method is "RIDER" (the shop's own) or "COURIER" (a service, named).</summary>
+public sealed record DispatchOrderRequest(
+    string Method,
+    string RiderName,
+    string RiderPhone,
+    string? CourierName = null,
+    string? Notes = null);
+
+/// <summary>
+/// Closes the trip as delivered. The collected fields are required only for a
+/// pay-on-delivery order, where handing over the goods is also the payment.
+/// </summary>
+public sealed record CompleteDeliveryRequest(
+    int? CollectedMinor = null,
+    /// <summary>"cash" or "mobilemoney".</summary>
+    string? CollectedVia = null);
+
+public sealed record FailDeliveryRequest(string Reason);
+
+/// <summary>
+/// Records money staff have already returned. Nothing here sends it — the
+/// method and reference say where it went, so the customer can find it.
+/// </summary>
+public sealed record RecordRefundRequest(
+    int AmountMinor,
+    /// <summary>"MOBILE_MONEY", "CASH", "HUBTEL" or "BANK_TRANSFER".</summary>
+    string Method,
+    string Reason,
+    string? Reference = null,
+    /// <summary>Units to put back on sale, per product. Empty when nothing came back.</summary>
+    IReadOnlyList<RestockLine>? Restock = null);
+
+public sealed record RestockLine(string ProductId, int Quantity);
+
+public sealed class DispatchOrderRequestValidator : AbstractValidator<DispatchOrderRequest>
+{
+    public DispatchOrderRequestValidator()
+    {
+        RuleFor(request => request.Method)
+            .Must(method => AdminService.TryParseDeliveryMethod(method, out _))
+            .WithMessage("Method must be RIDER or COURIER.");
+        RuleFor(request => request.RiderName).NotEmpty().MaximumLength(120);
+        // Lengths match the checkout's own phone rule: the customer is told
+        // this number and will ring it.
+        RuleFor(request => request.RiderPhone).NotEmpty().MinimumLength(9).MaximumLength(20);
+        RuleFor(request => request.CourierName)
+            .NotEmpty()
+            .When(request => AdminService.TryParseDeliveryMethod(request.Method, out var method)
+                && method == BodyBiotics.Domain.Entities.DeliveryMethod.Courier)
+            .WithMessage("Name the delivery service — Yango, Bolt, or the company used.");
+        RuleFor(request => request.CourierName).MaximumLength(80);
+        RuleFor(request => request.Notes).MaximumLength(500);
+    }
+}
+
+public sealed class CompleteDeliveryRequestValidator : AbstractValidator<CompleteDeliveryRequest>
+{
+    public CompleteDeliveryRequestValidator()
+    {
+        RuleFor(request => request.CollectedMinor!.Value)
+            .GreaterThan(0)
+            .When(request => request.CollectedMinor.HasValue);
+        RuleFor(request => request.CollectedVia)
+            .Must(via => via is "cash" or "mobilemoney")
+            .When(request => request.CollectedMinor.HasValue)
+            .WithMessage("Say how the rider was paid: cash or mobilemoney.");
+    }
+}
+
+public sealed class FailDeliveryRequestValidator : AbstractValidator<FailDeliveryRequest>
+{
+    public FailDeliveryRequestValidator()
+    {
+        RuleFor(request => request.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class RecordRefundRequestValidator : AbstractValidator<RecordRefundRequest>
+{
+    public RecordRefundRequestValidator()
+    {
+        RuleFor(request => request.AmountMinor).GreaterThan(0);
+        RuleFor(request => request.Method)
+            .Must(method => AdminService.TryParseRefundMethod(method, out _))
+            .WithMessage("Method must be MOBILE_MONEY, CASH, HUBTEL or BANK_TRANSFER.");
+        RuleFor(request => request.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(request => request.Reference).MaximumLength(64);
+        RuleForEach(request => request.Restock).ChildRules(line =>
+        {
+            line.RuleFor(item => item.ProductId).NotEmpty();
+            line.RuleFor(item => item.Quantity).GreaterThan(0);
+        });
+        RuleFor(request => request.Restock)
+            .Must(lines => lines is null || lines.Select(line => line.ProductId).Distinct().Count() == lines.Count)
+            .WithMessage("List each product once in restock.");
+    }
+}
 
 /// <summary>
 /// The catalogue as staff need it. Separate from the storefront's ProductDto on
@@ -103,7 +236,13 @@ public sealed record UpdateProductRequest(
     /// field that is absent and one that is null arrive here identically, and
     /// "leave the sale alone" must not read as "delete it".
     /// </summary>
-    bool? ClearSale = null);
+    bool? ClearSale = null,
+    /// <summary>
+    /// The stock the form was showing when it was loaded. Required with Stock:
+    /// orders keep taking stock while the form sits open, and saving the number
+    /// someone saw ten minutes ago would quietly hand those units back.
+    /// </summary>
+    int? ExpectedStock = null);
 
 public sealed class UpdateOrderStatusRequestValidator
     : AbstractValidator<UpdateOrderStatusRequest>
@@ -128,6 +267,11 @@ public sealed class UpdateProductRequestValidator : AbstractValidator<UpdateProd
         RuleFor(request => request.Stock!.Value)
             .GreaterThanOrEqualTo(0)
             .When(request => request.Stock.HasValue);
+
+        RuleFor(request => request.ExpectedStock)
+            .NotNull()
+            .When(request => request.Stock.HasValue)
+            .WithMessage("Send expectedStock, the stock the form was showing, with any stock change.");
 
         RuleFor(request => request.SalePriceMinor!.Value)
             .GreaterThanOrEqualTo(0)

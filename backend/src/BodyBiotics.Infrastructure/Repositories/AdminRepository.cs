@@ -69,6 +69,10 @@ public sealed class AdminRepository(AppDbContext db) : IAdminRepository
         await db.Orders
             .Include(order => order.Items)
             .ThenInclude(item => item.Product)
+            // Delivery and refund history ride along: the detail page shows
+            // them, and each rule about what may happen next reads them.
+            .Include(order => order.Deliveries)
+            .Include(order => order.Refunds)
             .FirstOrDefaultAsync(order => order.Reference == reference, cancellationToken);
 
     public async Task<PagedResult<Product>> ListProductsAsync(

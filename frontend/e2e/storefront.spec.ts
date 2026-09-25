@@ -1,4 +1,30 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+/**
+ * Puts the first product in the cart and waits for the server to have it.
+ *
+ * Waiting for the response, not just the click: the tests go straight to
+ * /checkout with page.goto, a full navigation that aborts any request still in
+ * flight. On a loaded runner the add had not landed yet, so checkout rendered
+ * "Nothing to check out" and the form these tests need never appeared.
+ */
+async function addFirstProductToCart(page: Page) {
+  await page.goto("/shop");
+  const addToCart = page.getByRole("button", { name: /^Add to cart$/ }).first();
+  await addToCart.waitFor({ timeout: 15_000 });
+
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/cart/items") &&
+        response.request().method() === "POST" &&
+        response.ok(),
+      { timeout: 15_000 },
+    ),
+    addToCart.click(),
+  ]);
+}
 
 test.describe("storefront journey", () => {
   test("home page shows the brand and a product grid", async ({ page }) => {
@@ -52,7 +78,11 @@ test.describe("storefront journey", () => {
     await firstProduct.click();
 
     await expect(page).toHaveURL(/\/product\//);
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    // The product page renders on demand, so its first hit on a cold server is
+    // slower than the default five seconds allows.
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({
+      timeout: 15_000,
+    });
 
     const addToCart = page.getByRole("button", { name: /add to cart/i }).first();
     if (await addToCart.isVisible()) {
@@ -72,10 +102,7 @@ test.describe("storefront journey", () => {
 
     // Seed a line so the form renders rather than the empty state. Branching on
     // whichever appeared first raced the cart query.
-    await page.goto("/shop");
-    const addToCart = page.getByRole("button", { name: /^Add to cart$/ }).first();
-    await addToCart.waitFor({ timeout: 15_000 });
-    await addToCart.click();
+    await addFirstProductToCart(page);
 
     await page.goto("/checkout");
 
@@ -102,10 +129,7 @@ test.describe("storefront journey", () => {
   }) => {
     test.slow();
 
-    await page.goto("/shop");
-    const addToCart = page.getByRole("button", { name: /^Add to cart$/ }).first();
-    await addToCart.waitFor({ timeout: 15_000 });
-    await addToCart.click();
+    await addFirstProductToCart(page);
 
     await page.goto("/checkout");
     await expect(page.getByText(/^Items$/)).toBeVisible({ timeout: 15_000 });

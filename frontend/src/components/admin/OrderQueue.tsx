@@ -14,7 +14,8 @@ import { cn } from "@/lib/utils/cn";
 const FILTERS = [
   { value: "pending", label: "Pending" },
   { value: "paid", label: "Paid" },
-  { value: "fulfilled", label: "Fulfilled" },
+  { value: "dispatched", label: "Out for delivery" },
+  { value: "fulfilled", label: "Delivered" },
   { value: "cancelled", label: "Cancelled" },
   { value: "refunded", label: "Refunded" },
   { value: "all", label: "All" },
@@ -29,9 +30,16 @@ const SEARCH_DEBOUNCE_MS = 350;
 export const STATUS_TONE: Record<string, string> = {
   PENDING: "bg-amber-100 text-amber-900",
   PAID: "bg-emerald-100 text-emerald-900",
+  DISPATCHED: "bg-orange-100 text-orange-900",
   FULFILLED: "bg-sky-100 text-sky-900",
   CANCELLED: "bg-neutral-200 text-neutral-700",
   REFUNDED: "bg-purple-100 text-purple-900",
+};
+
+/** The wire names predate delivery tracking; staff read these instead. */
+const STATUS_LABEL: Record<string, string> = {
+  DISPATCHED: "OUT FOR DELIVERY",
+  FULFILLED: "DELIVERED",
 };
 
 export function StatusBadge({ status }: { status: string }) {
@@ -42,7 +50,7 @@ export function StatusBadge({ status }: { status: string }) {
         STATUS_TONE[status] ?? "bg-neutral-200 text-neutral-700",
       )}
     >
-      {status}
+      {STATUS_LABEL[status] ?? status}
     </span>
   );
 }

@@ -4,9 +4,16 @@ public enum OrderStatus
 {
     Pending = 0,
     Paid = 1,
+
+    /// <summary>Delivered to the customer. The name predates delivery tracking.</summary>
     Fulfilled = 2,
     Cancelled = 3,
+
+    /// <summary>Everything that was paid has been returned.</summary>
     Refunded = 4,
+
+    /// <summary>Out for delivery with a rider or courier; see <see cref="Order.Deliveries"/>.</summary>
+    Dispatched = 5,
 }
 
 /// <summary>
@@ -82,6 +89,26 @@ public sealed class Order
 
     public DateTimeOffset? PaidAt { get; set; }
 
+    /// <summary>
+    /// What the shop actually received: Hubtel's settled figure, or what the
+    /// rider collected at the door. The ceiling on refunds — never the order
+    /// total, which a pay-on-delivery customer may not have paid in full.
+    /// </summary>
+    public int AmountPaidMinor { get; private set; }
+
+    /// <summary>The sum of <see cref="Refunds"/>, kept on the row so the ceiling is one comparison.</summary>
+    public int RefundedMinor { get; private set; }
+
+    public int RefundableMinor => Math.Max(0, AmountPaidMinor - RefundedMinor);
+
+    public ICollection<Delivery> Deliveries { get; init; } = [];
+
+    public ICollection<Refund> Refunds { get; init; } = [];
+
+    /// <summary>The attempt currently on the road, if any.</summary>
+    public Delivery? ActiveDelivery =>
+        Deliveries.FirstOrDefault(delivery => delivery.Status == DeliveryStatus.OutForDelivery);
+
     public OrderStatus Status { get; private set; } = OrderStatus.Pending;
 
     /// <summary>The goods, before delivery and before any discount.</summary>
@@ -135,8 +162,15 @@ public sealed class Order
     {
         var allowed = Status switch
         {
-            OrderStatus.Pending => next is OrderStatus.Paid or OrderStatus.Cancelled,
-            OrderStatus.Paid => next is OrderStatus.Fulfilled or OrderStatus.Refunded,
+            // Pay-on-delivery goes out unpaid; an online order waits for its money.
+            OrderStatus.Pending => next is OrderStatus.Paid or OrderStatus.Cancelled
+                || (next is OrderStatus.Dispatched && PaymentMethod == PaymentMethod.OnDelivery),
+            OrderStatus.Paid => next is OrderStatus.Dispatched or OrderStatus.Fulfilled or OrderStatus.Refunded,
+            // A failed delivery goes back to wherever it came from, so it can be
+            // sent again or cancelled. Which one depends on whether it was paid.
+            OrderStatus.Dispatched => next is OrderStatus.Fulfilled
+                || (next is OrderStatus.Pending && PaidAt is null)
+                || (next is OrderStatus.Paid && PaidAt is not null),
             OrderStatus.Fulfilled => next is OrderStatus.Refunded,
             _ => false,
         };
@@ -155,6 +189,100 @@ public sealed class Order
         Status = next;
         UpdatedAt = DateTimeOffset.UtcNow;
         return true;
+    }
+
+    /// <summary>
+    /// Money in. Every path that takes payment — Hubtel settling, a rider
+    /// collecting at the door, staff marking it paid — comes through here, so
+    /// the amount and the time cannot be set one without the other.
+    /// </summary>
+    public void RecordPayment(int amountMinor, DateTimeOffset at)
+    {
+        AmountPaidMinor = amountMinor;
+        PaidAt = at;
+    }
+
+    /// <summary>
+    /// Money out. Moves to <see cref="OrderStatus.Refunded"/> once everything
+    /// paid has gone back; a partial refund leaves the status alone. False,
+    /// with nothing changed, for an amount the order cannot cover.
+    /// </summary>
+    public bool TryAddRefund(Refund refund)
+    {
+        if (Status is not (OrderStatus.Paid or OrderStatus.Fulfilled)
+            || refund.AmountMinor <= 0
+            || refund.AmountMinor > RefundableMinor)
+        {
+            return false;
+        }
+
+        Refunds.Add(refund);
+        RefundedMinor += refund.AmountMinor;
+
+        if (RefundableMinor == 0)
+        {
+            TryTransitionTo(OrderStatus.Refunded);
+        }
+
+        UpdatedAt = DateTimeOffset.UtcNow;
+        return true;
+    }
+
+    /// <summary>Sends an attempt out. False if one is already on the road or the status forbids it.</summary>
+    public bool TryDispatch(Delivery delivery)
+    {
+        if (ActiveDelivery is not null || !TryTransitionTo(OrderStatus.Dispatched))
+        {
+            return false;
+        }
+
+        Deliveries.Add(delivery);
+        return true;
+    }
+
+    /// <summary>
+    /// Closes the attempt on the road as delivered. A pay-on-delivery order is
+    /// paid in the same step — the rider handing over the goods and taking the
+    /// money are one event, and recording them apart would leave a window where
+    /// the order reads delivered and unpaid.
+    /// </summary>
+    public bool TryCompleteDelivery(DateTimeOffset at, int? collectedMinor, string? collectedVia)
+    {
+        if (ActiveDelivery is not { } delivery || Status != OrderStatus.Dispatched)
+        {
+            return false;
+        }
+
+        if (PaidAt is null)
+        {
+            if (collectedMinor is not > 0)
+            {
+                return false;
+            }
+
+            delivery.CollectedMinor = collectedMinor;
+            delivery.CollectedVia = collectedVia;
+            PaymentChannel = collectedVia;
+            RecordPayment(collectedMinor.Value, at);
+        }
+
+        delivery.Status = DeliveryStatus.Delivered;
+        delivery.DeliveredAt = at;
+        return TryTransitionTo(OrderStatus.Fulfilled);
+    }
+
+    /// <summary>Brings a failed attempt back, ready to be sent again or cancelled.</summary>
+    public bool TryFailDelivery(string reason, DateTimeOffset at)
+    {
+        if (ActiveDelivery is not { } delivery || Status != OrderStatus.Dispatched)
+        {
+            return false;
+        }
+
+        delivery.Status = DeliveryStatus.Failed;
+        delivery.FailedAt = at;
+        delivery.FailureReason = reason;
+        return TryTransitionTo(PaidAt is null ? OrderStatus.Pending : OrderStatus.Paid);
     }
 }
 
@@ -188,6 +316,23 @@ public sealed class OrderItem
     /// "GH₵50 off" applied to the item being sent back.
     /// </summary>
     public int DiscountMinor { get; set; }
+
+    /// <summary>
+    /// Units a refund has put back on sale. Capped at <see cref="Quantity"/>:
+    /// restocking the same returned bottle twice would invent inventory.
+    /// </summary>
+    public int RestockedQuantity { get; private set; }
+
+    public bool TryRestock(int quantity)
+    {
+        if (quantity <= 0 || RestockedQuantity + quantity > Quantity)
+        {
+            return false;
+        }
+
+        RestockedQuantity += quantity;
+        return true;
+    }
 
     public int LineTotalMinor => UnitPriceMinor * Quantity;
 

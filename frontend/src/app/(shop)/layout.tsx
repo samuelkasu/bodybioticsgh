@@ -1,4 +1,5 @@
 import { AnnouncementBar } from "@/components/layout/AnnouncementBar";
+import { BackToTop } from "@/components/layout/BackToTop";
 import { CartDrawer } from "@/components/layout/CartDrawer";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { SiteHeader } from "@/components/layout/SiteHeader";
@@ -21,6 +22,7 @@ export default function ShopLayout({ children }: LayoutProps<"/">) {
       <div className="flex flex-1 flex-col">{children}</div>
       <SiteFooter />
       <CartDrawer />
+      <BackToTop />
       <Toaster />
     </>
   );

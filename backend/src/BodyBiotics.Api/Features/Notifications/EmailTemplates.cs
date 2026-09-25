@@ -70,11 +70,26 @@ public static class EmailTemplates
                 $"View your order: {OrderUrl(siteUrl, order)}"));
     }
 
-    public static (string Subject, string Html, string Text) OrderFulfilled(Order order, string siteUrl)
+    /// <summary>
+    /// Names who is coming, so the customer can pick up when an unknown number
+    /// rings and can ring the rider themselves if they have to step out.
+    /// </summary>
+    public static (string Subject, string Html, string Text) OrderDispatched(
+        Order order,
+        Delivery delivery,
+        string siteUrl)
     {
-        var lead = order.PaymentMethod == PaymentMethod.Hubtel
-            ? "Your order is on its way. Our rider will call you on the number below when they are close."
-            : $"Your order is on its way. Our rider will call you on the number below when they are close, and will collect {Money.Format(order.TotalMinor, order.Currency)} on delivery.";
+        var carrier = delivery.Method == DeliveryMethod.Courier && !string.IsNullOrWhiteSpace(delivery.CourierName)
+            ? $"{delivery.RiderName} from {delivery.CourierName}"
+            : delivery.RiderName;
+
+        var payment = order.PaidAt is null
+            ? $" Please have {Money.Format(order.TotalMinor, order.Currency)} ready — cash or Mobile Money on delivery."
+            : string.Empty;
+
+        var lead =
+            $"Your order is on its way with {carrier}, who will call you when they are close. " +
+            $"You can reach them on {delivery.RiderPhone}.{payment}";
 
         return (
             $"Order {order.Reference} is on its way",
@@ -90,6 +105,68 @@ public static class EmailTemplates
                 OrderSummaryText(order),
                 DeliveryText(order),
                 $"View your order: {OrderUrl(siteUrl, order)}"));
+    }
+
+    /// <summary>
+    /// Only ever sent after staff have sent the money, so it can say plainly
+    /// that it has gone — the refund record is written after the fact.
+    /// </summary>
+    public static (string Subject, string Html, string Text) OrderRefunded(
+        Order order,
+        Refund refund,
+        string siteUrl)
+    {
+        var how = refund.Method switch
+        {
+            RefundMethod.MobileMoney => "to your Mobile Money wallet",
+            RefundMethod.Cash => "in cash",
+            RefundMethod.BankTransfer => "by bank transfer",
+            _ => "to the account you paid from",
+        };
+
+        var reference = string.IsNullOrWhiteSpace(refund.Reference)
+            ? string.Empty
+            : $" The transaction reference is {refund.Reference}.";
+
+        var remainder = order.RefundableMinor > 0
+            ? $" This is a partial refund; the rest of the order stands."
+            : string.Empty;
+
+        var lead =
+            $"We have refunded {Money.Format(refund.AmountMinor, order.Currency)} {how} for order {order.Reference}." +
+            $"{reference}{remainder} If anything about it looks wrong, reply to this email.";
+
+        return (
+            $"Refund of {Money.Format(refund.AmountMinor, order.Currency)} for {order.Reference}",
+            Document(
+                "Refund sent",
+                Paragraph(lead) +
+                OrderSummaryHtml(order) +
+                ButtonHtml("View your order", OrderUrl(siteUrl, order))),
+            Text(
+                "REFUND SENT",
+                lead,
+                OrderSummaryText(order),
+                $"View your order: {OrderUrl(siteUrl, order)}"));
+    }
+
+    public static (string Subject, string Html, string Text) OrderFulfilled(Order order, string siteUrl)
+    {
+        const string lead =
+            "Your order has been delivered. Thank you for shopping with us — if anything is not right with it, reply to this email.";
+
+        return (
+            $"Order {order.Reference} delivered",
+            Document(
+                "Delivered",
+                Paragraph(lead) +
+                OrderSummaryHtml(order) +
+                ButtonHtml("Shop again", $"{siteUrl}/shop")),
+            Text(
+                "DELIVERED",
+                lead,
+                OrderSummaryText(order),
+                $"Shop again: {siteUrl}/shop"));
     }
 
     public static (string Subject, string Html, string Text) OrderCancelled(Order order, string siteUrl)

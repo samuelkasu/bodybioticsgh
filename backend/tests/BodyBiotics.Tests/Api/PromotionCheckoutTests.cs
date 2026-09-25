@@ -105,6 +105,7 @@ public class PromotionCheckoutTests
             new CartService(
                 carts,
                 products,
+                new FakeUnitOfWork(),
                 pricing,
                 new AddToCartRequestValidator(),
                 new UpdateCartLineRequestValidator(),

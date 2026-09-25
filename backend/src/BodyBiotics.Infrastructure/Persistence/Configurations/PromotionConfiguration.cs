@@ -22,6 +22,11 @@ internal sealed class CouponConfiguration : IEntityTypeConfiguration<Coupon>
         builder.HasIndex(coupon => coupon.Code).IsUnique();
         builder.HasIndex(coupon => coupon.Active);
 
+        // Same reason as Product's: TimesUsed is read, incremented and written
+        // back, so without a token two checkouts on the last use of a code
+        // would both redeem it.
+        builder.Property<uint>("Version").IsRowVersion();
+
         builder.ToTable(table =>
         {
             table.HasCheckConstraint("ck_coupon_value_non_negative", "\"value\" >= 0");
