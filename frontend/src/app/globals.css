@@ -53,6 +53,9 @@
   --font-sans:
     var(--font-cedi), var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-cedi), var(--font-crimson-pro), ui-serif, Georgia, serif;
+  /* The homepage hero only. A high-contrast modern, where --font-display is an
+     old-style serif; the two are not interchangeable at headline size. */
+  --font-hero: var(--font-cedi), var(--font-hero-face), ui-serif, Georgia, serif;
   --font-script:
     var(--font-wahiyang), var(--font-cedi), var(--font-crimson-pro), ui-serif, serif;
 
