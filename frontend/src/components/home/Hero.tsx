@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { HeroVideo } from "@/components/home/HeroVideo";
 import { PhotoSlideshow } from "@/components/home/PhotoSlideshow";
 import { StarRating } from "@/components/commerce/StarRating";
 import { site } from "@/lib/site";
@@ -22,8 +21,16 @@ import { site } from "@/lib/site";
  * to object-cover they lose their subjects' mouths and chins, which reads as
  * an accident rather than a close-up. Each of these is an explicit crop that
  * keeps the faces whole at the band's proportions.
+ *
+ * All five are 1600px wide, which is as far as the source photography goes.
  */
-const SLIDES = ["/brand/hero-1.webp", "/brand/hero-2.webp", "/brand/hero-3.webp"];
+const SLIDES = [
+  "/brand/hero-1.webp",
+  "/brand/hero-2.webp",
+  "/brand/hero-3.webp",
+  "/brand/hero-4.webp",
+  "/brand/hero-5.webp",
+];
 
 /** Four are on file; three read as a group without crowding the pill. */
 const RATED_BY = [
@@ -54,6 +61,12 @@ export function Hero() {
         alt="Women wearing Body Biotics skincare"
         sizes="100vw"
         intervalMs={6000}
+        // The source photography tops out at 1600px, so the optimizer cannot
+        // add resolution back; what it can stop doing is throwing away the
+        // detail that is there. At the default 75 these came out soft and
+        // blocky across the cheeks and the flat studio backdrops.
+        quality={90}
+        drift="gentle"
         className="-z-20"
       />
 
@@ -72,15 +85,6 @@ export function Hero() {
         aria-hidden="true"
         className="absolute inset-0 -z-10 bg-linear-to-r from-black/65 via-black/20 to-transparent"
       />
-
-      {/* Dead centre on a desktop, as the design has it. On a phone the copy
-          below is tall enough to reach the middle of the panel, so the control
-          is confined to the upper half where it cannot land on the headline. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 grid h-[55%] place-items-center lg:h-full">
-        <div className="pointer-events-auto">
-          <HeroVideo src="/brand/skincare.mp4" label="Play the Body Biotics film" />
-        </div>
-      </div>
 
       <div className="max-w-shell mx-auto grid w-full gap-8 px-4 pt-44 pb-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-end lg:gap-12 lg:pt-32 lg:pb-16">
         <div>
