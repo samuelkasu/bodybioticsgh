@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Crimson_Pro, Inter_Tight } from "next/font/google";
+import { Crimson_Pro, Inter_Tight, Playfair_Display } from "next/font/google";
 import localFont from "next/font/local";
 
 import { Splash } from "@/components/layout/Splash";
@@ -28,6 +28,19 @@ const interTight = Inter_Tight({
 const crimsonPro = Crimson_Pro({
   variable: "--font-crimson-pro",
   subsets: ["latin"],
+  display: "swap",
+});
+
+// The homepage hero's headline, and only that. Crimson Pro is an old-style
+// serif — low contrast, slanted stress — and the design this hero is built to
+// is a high-contrast modern, so the two do not read as the same thing at 88px.
+//
+// One weight: the headline is the only thing set in it, and each extra weight
+// is another file in front of the largest paint on the site.
+const playfair = Playfair_Display({
+  variable: "--font-hero-face",
+  subsets: ["latin"],
+  weight: ["400"],
   display: "swap",
 });
 
@@ -68,6 +81,13 @@ const cedi = localFont({
   display: "swap",
   // 1.2KB, on every page, and the first thing a price needs.
   preload: true,
+  // Without this, next/font also emits a metric-adjusted "cedi Fallback" face
+  // and appends it to the family. That fallback is a system font with full
+  // coverage, and it sits second in every stack here — ahead of Crimson Pro
+  // and Inter Tight — so it answered for every character on the site and the
+  // real faces were never fetched at all. The whole storefront was rendering
+  // in adjusted Arial. A one-glyph font has nothing to fall back to anyway.
+  adjustFontFallback: false,
 });
 
 export const metadata: Metadata = {
@@ -186,7 +206,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en-GH"
-      className={`${cedi.variable} ${interTight.variable} ${crimsonPro.variable} ${wahiyang.variable} h-full antialiased`}
+      className={`${cedi.variable} ${interTight.variable} ${crimsonPro.variable} ${playfair.variable} ${wahiyang.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
         <JsonLd data={ORGANISATION_JSON_LD} />
