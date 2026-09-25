@@ -70,16 +70,14 @@ export function SiteHeader() {
       )}
     >
       {/* The tint the original lays over the bar: warm on home, neutral
-          elsewhere. On home it is a gradient rather than a flat wash — the
-          photograph should read through the bar, but the nav still needs
-          something solid directly behind it. */}
+          elsewhere. On home it is a flat wash with a hard bottom edge, not a
+          gradient — the bar should read as a bar that the photograph shows
+          through, which is what a fade to nothing loses. */}
       <span
         aria-hidden="true"
         className={cn(
-          "absolute inset-0",
-          isHome
-            ? "bg-linear-to-b from-black/65 via-black/35 to-transparent"
-            : "bg-black/[0.13] backdrop-blur-[4.5px]",
+          "absolute inset-0 backdrop-blur-[4.5px]",
+          isHome ? "bg-cocoa-deep/58" : "bg-black/[0.10]",
         )}
       />
 
