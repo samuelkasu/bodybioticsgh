@@ -346,6 +346,18 @@
     transition-duration: 20s;
   }
 
+  /*
+   * The homepage hero's drift. 1.3 belongs on the testimonial panel, which is
+   * small and fed by photographs larger than the box they sit in. The hero is
+   * full-bleed off 1600px originals, so magnifying them is spending resolution
+   * the source does not have — and at that size the crop visibly tightens on
+   * one face partway through a slide. 1.06 still moves; it just does not eat
+   * the composition or the detail.
+   */
+  .ken-burns-gentle[data-active="true"] {
+    transform: scale(1.06);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .ken-burns,
     .ken-burns[data-active="true"] {
