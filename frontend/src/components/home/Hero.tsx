@@ -20,15 +20,12 @@ import { site } from "@/lib/site";
  * an accident rather than a close-up. Each of these is an explicit crop that
  * keeps the faces whole at the band's proportions.
  *
- * All five are 1600px wide, which is as far as the source photography goes.
+ * Three, not five. Two more were tried and dropped: their originals were
+ * 612x323 and 563x360, and upscaling interpolates rather than recovering
+ * detail, so they sat visibly soft next to these. A slide only belongs here
+ * if its source is 1600px wide, which is as far as the photography goes.
  */
-const SLIDES = [
-  "/brand/hero-1.webp",
-  "/brand/hero-2.webp",
-  "/brand/hero-3.webp",
-  "/brand/hero-4.webp",
-  "/brand/hero-5.webp",
-];
+const SLIDES = ["/brand/hero-1.webp", "/brand/hero-2.webp", "/brand/hero-3.webp"];
 
 /**
  * Pill and outline, not the rounded rectangles Button enforces elsewhere, and
