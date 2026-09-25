@@ -1,13 +1,11 @@
-import Image from "next/image";
 import Link from "next/link";
 
 import { PhotoSlideshow } from "@/components/home/PhotoSlideshow";
-import { StarRating } from "@/components/commerce/StarRating";
 import { site } from "@/lib/site";
 
 /**
- * Full-bleed opening panel: a photo that changes on its own, the store rating
- * over it, the headline, two calls to action and the promise in the corner.
+ * Full-bleed opening panel: a photo that changes on its own, the headline, two
+ * calls to action and the promise in the corner.
  *
  * The photos rotate rather than sitting on one frame, which is what the design
  * asks for and also hides the fact that no single shot carries the whole
@@ -31,15 +29,6 @@ const SLIDES = [
   "/brand/hero-4.webp",
   "/brand/hero-5.webp",
 ];
-
-/** Four are on file; three read as a group without crowding the pill. */
-const RATED_BY = [
-  { src: "/brand/avatars-amaka.webp", alt: "" },
-  { src: "/brand/avatars-caroline.webp", alt: "" },
-  { src: "/brand/avatars-charity.webp", alt: "" },
-];
-
-const STORE_RATING = 4.7;
 
 /**
  * Pill and outline, not the rounded rectangles Button enforces elsewhere, and
@@ -88,30 +77,7 @@ export function Hero() {
 
       <div className="max-w-shell mx-auto grid w-full gap-8 px-4 pt-44 pb-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-end lg:gap-12 lg:pt-32 lg:pb-16">
         <div>
-          <p className="inline-flex items-center gap-3 rounded-full bg-black/35 py-2 pr-5 pl-2 backdrop-blur-sm">
-            <span className="flex -space-x-2">
-              {RATED_BY.map((face) => (
-                <Image
-                  key={face.src}
-                  src={face.src}
-                  alt={face.alt}
-                  width={160}
-                  height={160}
-                  sizes="32px"
-                  className="h-8 w-8 rounded-full border-2 border-white/80 object-cover"
-                />
-              ))}
-            </span>
-
-            <span className="flex flex-col leading-tight">
-              <StarRating value={STORE_RATING} />
-              <span className="text-caption font-medium text-white/90">
-                {STORE_RATING} Store Ratings
-              </span>
-            </span>
-          </p>
-
-          <h1 className="font-display text-display-lg sm:text-display-xl mt-6 max-w-[14ch] text-[#f4ece3]">
+          <h1 className="font-display text-display-lg sm:text-display-xl max-w-[14ch] text-[#f4ece3]">
             Elevate your Skin tone.
           </h1>
 
