@@ -56,6 +56,9 @@
   /* The homepage hero only. A high-contrast modern, where --font-display is an
      old-style serif; the two are not interchangeable at headline size. */
   --font-hero: var(--font-cedi), var(--font-hero-face), ui-serif, Georgia, serif;
+  /* The hero's copy and button labels, against that headline. */
+  --font-hero-copy:
+    var(--font-cedi), var(--font-hero-copy-face), ui-sans-serif, system-ui, sans-serif;
   --font-script:
     var(--font-wahiyang), var(--font-cedi), var(--font-crimson-pro), ui-serif, serif;
 
