@@ -113,9 +113,8 @@ const nextConfig: NextConfig = {
     deviceSizes: [360, 414, 640, 750, 828, 1080, 1200, 1920],
     // Next 16 only serves qualities named here. 75 is the default every
     // product photo uses; 62 is for the full-bleed archive banner, which sits
-    // under a black wash behind the title; 90 is the homepage hero, where the
-    // default put visible blocking into skin tones at full-bleed size.
-    qualities: [62, 75, 90],
+    // under a black wash behind the title.
+    qualities: [62, 75],
   },
   async rewrites() {
     return [

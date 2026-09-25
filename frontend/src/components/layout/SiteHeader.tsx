@@ -28,15 +28,6 @@ import { cn } from "@/lib/utils/cn";
  *
  * It scrolls away with the page rather than sticking — the original's header
  * is `position: static` on every template.
- *
- * On the home page it is transparent and sits over the hero instead. That is
- * the one place it can be: the hero is a full-bleed photograph with its own
- * dark wash, so the bar has something to be legible against. Everywhere else
- * the page starts on cream and white nav links would disappear.
- *
- * Because the header does not stick, "over the hero" is the only state it
- * ever has there — scroll and it leaves with the photograph. No second,
- * solid-on-scroll variant is needed, and none is worth the scroll listener.
  */
 export function SiteHeader() {
   const dispatch = useAppDispatch();
@@ -55,29 +46,17 @@ export function SiteHeader() {
   useGetCartQuery();
 
   const isHome = pathname === "/";
-  // Over the hero the panels have a photograph behind them, not a solid bar,
-  // so they need most of the way to opaque to stay readable.
-  const panelTone = isHome ? "bg-cocoa-deep/95" : "bg-black/70";
+  // The drop-down panels carry the bar's own tint so they read as part of it.
+  const panelTone = isHome ? "bg-taupe/80" : "bg-black/70";
 
   return (
-    <header
-      className={cn(
-        "relative z-40",
-        // -mb-20 pulls the hero up under the bar without taking the header out
-        // of the flow, so it still scrolls away and still pushes nothing else
-        // around. 5rem is the height the padding below is built to hold.
-        isHome ? "-mb-20" : "bg-[#000000eb]",
-      )}
-    >
-      {/* The tint the original lays over the bar: warm on home, neutral
-          elsewhere. On home it is a flat wash with a hard bottom edge, not a
-          gradient — the bar should read as a bar that the photograph shows
-          through, which is what a fade to nothing loses. */}
+    <header className="relative z-40 bg-[#000000eb]">
+      {/* The tint the original lays over the bar: warm on home, neutral elsewhere. */}
       <span
         aria-hidden="true"
         className={cn(
           "absolute inset-0 backdrop-blur-[4.5px]",
-          isHome ? "bg-cocoa-deep/58" : "bg-black/[0.10]",
+          isHome ? "bg-taupe/55" : "bg-black/[0.13]",
         )}
       />
 

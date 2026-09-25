@@ -53,12 +53,6 @@
   --font-sans:
     var(--font-cedi), var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-cedi), var(--font-crimson-pro), ui-serif, Georgia, serif;
-  /* The homepage hero only. A high-contrast modern, where --font-display is an
-     old-style serif; the two are not interchangeable at headline size. */
-  --font-hero: var(--font-cedi), var(--font-hero-face), ui-serif, Georgia, serif;
-  /* The hero's copy and button labels, against that headline. */
-  --font-hero-copy:
-    var(--font-cedi), var(--font-hero-copy-face), ui-sans-serif, system-ui, sans-serif;
   --font-script:
     var(--font-wahiyang), var(--font-cedi), var(--font-crimson-pro), ui-serif, serif;
 
@@ -350,18 +344,6 @@
   .ken-burns[data-active="true"] {
     transform: scale(1.3);
     transition-duration: 20s;
-  }
-
-  /*
-   * The homepage hero's drift. 1.3 belongs on the testimonial panel, which is
-   * small and fed by photographs larger than the box they sit in. The hero is
-   * full-bleed off 1600px originals, so magnifying them is spending resolution
-   * the source does not have — and at that size the crop visibly tightens on
-   * one face partway through a slide. 1.06 still moves; it just does not eat
-   * the composition or the detail.
-   */
-  .ken-burns-gentle[data-active="true"] {
-    transform: scale(1.06);
   }
 
   @media (prefers-reduced-motion: reduce) {
