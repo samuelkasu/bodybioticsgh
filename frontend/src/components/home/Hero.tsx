@@ -74,7 +74,7 @@ export function Hero() {
 
       <div className="max-w-shell mx-auto grid w-full gap-8 px-4 pt-44 pb-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-end lg:gap-12 lg:pt-32 lg:pb-16">
         <div>
-          <h1 className="font-display text-display-lg sm:text-display-xl max-w-[14ch] text-[#f4ece3]">
+          <h1 className="font-hero text-display-lg sm:text-display-xl max-w-[14ch] text-[#f4ece3]">
             Elevate your Skin tone.
           </h1>
 
