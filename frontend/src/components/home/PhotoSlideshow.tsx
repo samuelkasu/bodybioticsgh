@@ -13,6 +13,15 @@ export type PhotoSlideshowProps = {
   /** Milliseconds each photo holds before the next one fades in. */
   intervalMs?: number;
   fadeMs?: number;
+  /**
+   * Overrides the optimizer's default 75. Worth raising for a full-bleed
+   * panel: at that size 75 puts visible blocking into skin tones and flat
+   * studio backdrops, which is exactly what these photographs are made of.
+   * Must be listed in `images.qualities` in next.config.ts.
+   */
+  quality?: number;
+  /** "gentle" keeps the drift to 1.06 where the source cannot spare the pixels. */
+  drift?: "full" | "gentle";
   className?: string;
 };
 
@@ -31,6 +40,8 @@ export function PhotoSlideshow({
   sizes,
   intervalMs = 4000,
   fadeMs = 2000,
+  quality,
+  drift = "full",
   className,
 }: PhotoSlideshowProps) {
   // -1 until the first advance, so nothing sits behind the opening photo.
@@ -78,10 +89,14 @@ export function PhotoSlideshow({
               alt={position === 0 ? alt : ""}
               fill
               sizes={sizes}
+              quality={quality}
               // Only the first slide blocks paint; the rest arrive before their turn.
               priority={position === 0}
               data-active={isActive}
-              className="ken-burns object-cover"
+              className={cn(
+                "ken-burns object-cover",
+                drift === "gentle" && "ken-burns-gentle",
+              )}
             />
           </div>
         );
