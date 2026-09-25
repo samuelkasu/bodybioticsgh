@@ -33,8 +33,11 @@ const SLIDES = ["/brand/hero-1.webp", "/brand/hero-2.webp", "/brand/hero-3.webp"
  * Button's variants are all built for the latter. Kept local so the shared
  * component's brand rule stays intact for every other screen.
  */
+// min-h-11 is 44px, the smallest a thumb should be asked to hit, and the
+// tighter of the two sizes the design uses. Anything under that is a slip
+// waiting to happen on a phone, however well it crops in a screenshot.
 const CTA_BASE =
-  "focus-ring inline-flex min-h-12 items-center justify-center rounded-full px-8 text-base font-medium no-underline transition-colors hover:no-underline";
+  "focus-ring font-hero-copy inline-flex min-h-11 items-center justify-center rounded-full px-7 text-[0.9375rem] no-underline transition-colors hover:no-underline";
 
 export function Hero() {
   return (
@@ -96,7 +99,7 @@ export function Hero() {
 
         {/* The promise, bottom right on a desktop and under the buttons on a
             phone, where a second column would squeeze both to nothing. */}
-        <p className="text-lg leading-relaxed text-white/90 lg:text-right">
+        <p className="font-hero-copy text-lg leading-relaxed text-white/90 lg:text-right">
           {site.description}
         </p>
       </div>
